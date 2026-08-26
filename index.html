@@ -218,6 +218,25 @@ table tr:hover td{ background:var(--surface-2); }
 .modal-back{ position:fixed; inset:0; background:rgba(10,8,2,0.55); backdrop-filter:blur(2px); z-index:100; display:flex; align-items:flex-start; justify-content:center; padding:5vh 20px; overflow-y:auto; }
 .modal{ background:var(--surface); border-radius:var(--radius-l); max-width:760px; width:100%; box-shadow:var(--shadow-2); border:1px solid var(--hair); }
 
+.hover-card-preview{
+  position:fixed; z-index:220; display:none; pointer-events:none;
+  width:320px; max-height:80vh; overflow:hidden;
+  background:var(--surface); border:1px solid var(--hair-strong); border-radius:var(--radius-m);
+  box-shadow:var(--shadow-2); padding:12px;
+}
+.hover-card-preview .hcp-body{ display:flex; gap:10px; }
+.hover-card-preview .hcp-art{ flex:none; width:120px; }
+.hover-card-preview .hcp-art img{ display:block; width:100%; border-radius:8px; aspect-ratio:744/1039; object-fit:cover; }
+.hover-card-preview .hcp-info{ flex:1; min-width:0; }
+.hover-card-preview .hcp-name{ font-family:var(--font-display); font-weight:700; font-size:.9rem; line-height:1.2; margin-bottom:2px; }
+.hover-card-preview .hcp-sub{ font-size:.64rem; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:5px; }
+.hover-card-preview .hcp-text{ font-size:.7rem; color:var(--ink-2); max-height:110px; overflow:hidden; }
+.hover-card-preview .hcp-power{ margin-top:6px; font-size:.7rem; font-weight:700; color:var(--ink); }
+.hover-card-preview .hcp-synergy{ margin-top:8px; border-top:1px solid var(--hair); padding-top:6px; }
+.hover-card-preview .hcp-label{ font-size:.64rem; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
+.hover-card-preview .hcp-syn-row{ display:flex; justify-content:space-between; gap:8px; font-size:.72rem; padding:1px 0; }
+.hoverable-card-name{ border-bottom:1px dotted var(--accent); color:var(--accent-ink); cursor:default; }
+
 /* ---------- inline rules-text pips & keyword terms ---------- */
 .pip{
   display:inline-flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:700;
@@ -263,6 +282,12 @@ table tr:hover td{ background:var(--surface-2); }
 .mini-card .stats{ display:flex; gap:8px; font-family:var(--font-mono); font-size:.68rem; font-weight:700; }
 .mini-card .stats span{ display:flex; align-items:center; gap:2px; }
 .mini-card .qty{ position:absolute; bottom:6px; right:6px; background:var(--accent); color:#fff; border-radius:6px; padding:1px 6px; font-family:var(--font-mono); font-weight:700; font-size:.72rem; box-shadow:var(--shadow-1); }
+.mini-card .matchscore{
+  position:absolute; bottom:6px; left:6px; z-index:2; background:var(--focus); color:#fff; border-radius:6px;
+  padding:1px 6px; font-family:var(--font-mono); font-weight:700; font-size:.72rem; box-shadow:var(--shadow-1);
+}
+.mini-card .mini-card-check{ position:absolute; top:6px; right:6px; z-index:3; display:flex; }
+.mini-card .mini-card-check input{ width:16px; height:16px; cursor:pointer; }
 .mini-card.small{ width:112px; }
 .mini-card.small .head{ min-height:46px; }
 .mini-card.small .txt{ -webkit-line-clamp:2; }
@@ -284,6 +309,9 @@ table tr:hover td{ background:var(--surface-2); }
 
 .card-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
 .deck-list-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:10px; }
+.decklist-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-radius:8px; }
+.decklist-row:hover{ background:var(--surface-2); }
+.decklist-row + .decklist-row{ margin-top:2px; }
 
 /* ---------- tabs ---------- */
 .subtabs{ display:flex; gap:4px; border-bottom:1px solid var(--hair); margin-bottom:16px; }
@@ -346,6 +374,17 @@ const META_DATA = {"compiled_date":"2026-08-25","current_meta_tier_list":{"sourc
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* ===================== CLOUD ACCOUNT CONFIG =====================
+   Optional: bake a Supabase project's public config directly into this
+   build so every visitor gets "Log in / Sign up" immediately with no setup
+   step of their own. Safe to expose in the shipped file — this is the
+   public "anon" key, meant to be client-side; real protection comes from
+   the row-level-security policies on the server (see SUPABASE_SETUP.md).
+   Leave both null to ship in "bring your own project" mode instead, where
+   each visitor pastes their own Project URL + anon key once (used for
+   local development / sharing the raw source rather than one hosted site). */
+const BAKED_CLOUD_CONFIG = { url: "https://fierdklghpsiacoxuzye.supabase.co", anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpZXJka2xnaHBzaWFjb3h1enllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NTgyNjAsImV4cCI6MjEwMzMzNDI2MH0.b-uf8iWe3erVlhCxU96q8fOP1KiwJ3eZSV3q25ZG244" };
+
 /* ===================== CONFIG & GLOSSARY ===================== */
 const DOMAIN_ORDER = ["Calm","Fury","Body","Order","Chaos","Mind","Colorless"];
 const DOMAIN_LABEL = { Calm:"Calm", Fury:"Fury", Body:"Body", Order:"Order", Chaos:"Chaos", Mind:"Mind", Colorless:"Colorless" };
@@ -577,6 +616,68 @@ const POOL_RUNE = CARDS.filter(c=>c.type==="Rune");
 const ALL_SETS = [...new Set(CARDS.map(c=>c.set))];
 const SET_LABELS = Object.fromEntries(CARDS.map(c=>[c.set,c.setLabel]));
 
+/* ===================== DECKLIST TEXT IMPORT (parsing only — no UI here) =====================
+   Tolerant line-based parser supporting the common notations seen across TCG deck-list
+   sites/tools: "<qty> <name>", "<qty>x <name>", "<name> x<qty>", and any of those with a
+   trailing set/number annotation like "(UNL-042)" or "[UNL 042]" stripped off. Section
+   headers (Legend/Main Deck/Runes/Battlefields/etc.), blank lines, and //-or-#-comments are
+   ignored — cards are routed to legend/main/rune/battlefield by their actual card type, so
+   headers are a convenience, not a requirement. */
+let _cardNameIndex = null;
+function normalizeCardName(s){ return String(s||"").toLowerCase().replace(/[’']/g,"'").replace(/\s+/g," ").trim(); }
+// Handles this game's "Legend - Title" vs "Legend, Title" naming variance by
+// folding separator punctuation to a space rather than dropping it outright
+// (dropping alone can leave a double space and miss the match).
+function looseNormalizeCardName(s){ return normalizeCardName(s).replace(/[,\-–]/g," ").replace(/\s+/g," ").trim(); }
+function buildCardNameIndex(){
+  if(_cardNameIndex) return _cardNameIndex;
+  const idx = new Map();
+  for(const c of CARDS) idx.set(normalizeCardName(c.name), c);
+  _cardNameIndex = idx;
+  return idx;
+}
+function findCardByName(name){
+  const idx = buildCardNameIndex();
+  const norm = normalizeCardName(name);
+  if(idx.has(norm)) return idx.get(norm);
+  const loose = looseNormalizeCardName(name);
+  for(const [k,c] of idx){ if(looseNormalizeCardName(k)===loose) return c; }
+  const stripped = norm.replace(/[^a-z0-9 ]/g,"");
+  for(const [k,c] of idx){ if(k.replace(/[^a-z0-9 ]/g,"")===stripped) return c; }
+  const candidates = [...idx.entries()].filter(([k])=>k.includes(norm)||norm.includes(k));
+  if(candidates.length===1) return candidates[0][1];
+  return null;
+}
+function parseDecklistLine(rawLine){
+  let line = String(rawLine||"").trim();
+  if(!line) return null;
+  if(line.startsWith("//") || line.startsWith("#")) return null;
+  if(/^(legend|champion|signature\s*spell|main\s*deck|maindeck|deck\s*list|deck|runes?|rune\s*deck|battlefields?|sideboard)\s*:?\s*$/i.test(line)) return null;
+  line = line.replace(/\s*[\(\[][A-Za-z0-9 #\-\.]{2,20}[\)\]]\s*$/,"").trim();
+  if(!line) return null;
+  let qty=1, name=line, m;
+  if((m = line.match(/^(\d+)\s*[xX]?\s+(.+)$/))){ qty=parseInt(m[1],10); name=m[2].trim(); }
+  else if((m = line.match(/^(.+?)\s*[x×]\s*(\d+)$/i))){ name=m[1].trim(); qty=parseInt(m[2],10); }
+  if(!name) return null;
+  return { qty: Math.max(1,qty||1), name };
+}
+function parseDecklistText(text){
+  const matched=[], unmatched=[];
+  let legend=null;
+  for(const raw of String(text||"").split(/\r?\n/)){
+    const parsed = parseDecklistLine(raw);
+    if(!parsed) continue;
+    const card = findCardByName(parsed.name);
+    if(!card){ unmatched.push(raw.trim()); continue; }
+    let target = "main";
+    if(card.type==="Legend"){ target="legend"; legend=card; }
+    else if(card.type==="Rune") target="rune";
+    else if(card.type==="Battlefield") target="battlefield";
+    matched.push({ qty:parsed.qty, card, target });
+  }
+  return { matched, unmatched, legend };
+}
+
 function legendDomains(legend){ return legend ? (legend.domain||[]) : []; }
 function cardLegalForLegend(card, legend){
   if(!legend) return true;
@@ -701,6 +802,7 @@ let cloudConfig = null;        // {url, anonKey} once connected
 let supabaseClient = null;     // live Supabase client once connected
 let currentUser = null;        // {id, email, ...} once logged in
 let _lastCloudDeckIds = new Set();
+let _configIsBaked = false;    // true when BAKED_CLOUD_CONFIG (part1_config.js) supplied the connection — hides the "bring your own project" flow
 
 let _authModalMode = "connect"; // "connect" | "auth"
 let _authTab = "signin";        // "signin" | "signup"
@@ -727,7 +829,12 @@ function clearCloudConfig(){
 
 /* called once from init() at boot */
 function initAccountSystem(){
-  cloudConfig = loadCloudConfig();
+  if(typeof BAKED_CLOUD_CONFIG!=="undefined" && BAKED_CLOUD_CONFIG && BAKED_CLOUD_CONFIG.url && BAKED_CLOUD_CONFIG.anonKey){
+    _configIsBaked = true;
+    cloudConfig = BAKED_CLOUD_CONFIG;
+  } else {
+    cloudConfig = loadCloudConfig();
+  }
   renderAccountPill();
   if(!cloudConfig || !cloudLibAvailable()) return; // stay fully offline — no config, or CDN lib didn't load (e.g. no internet)
   connectSupabase(cloudConfig, { silent:true });
@@ -836,7 +943,7 @@ function renderAccountPill(){
       else handleSignedOut();
     });
   } else if(cloudConfigured()){
-    box.innerHTML = `<button class="btn ghost small" id="btnAccountLogin">Log in / Sign up</button>`;
+    box.innerHTML = `<button class="btn small" id="btnAccountLogin">Log in / Sign up</button>`;
     byId("btnAccountLogin").addEventListener("click", ()=>openAccountModal("auth"));
   } else {
     box.innerHTML = `<button class="btn ghost small" id="btnAccountConnect">Save decks to an account</button>`;
@@ -891,7 +998,7 @@ function accountModalBodyHtml(){
       <button class="btn small" id="acctAuthSubmit">${_authTab==="signin"?"Log in":"Sign up"}</button>
       ${_authTab==="signin"?'<button class="btn ghost small" id="acctForgotPw">Forgot password?</button>':""}
     </div>
-    <p class="hint" style="margin-top:14px;"><a href="#" id="acctChangeProject" style="color:var(--focus);">Use a different Supabase project</a></p>`;
+    ${_configIsBaked?"":'<p class="hint" style="margin-top:14px;"><a href="#" id="acctChangeProject" style="color:var(--focus);">Use a different Supabase project</a></p>'}`;
 }
 
 function wireAccountModal(){
@@ -931,7 +1038,8 @@ function wireAccountModal(){
     }catch(err){ _authError = "Unexpected error: "+err.message; }
     renderAccountModal();
   });
-  byId("acctChangeProject").addEventListener("click", e=>{
+  const changeProject = byId("acctChangeProject");
+  if(changeProject) changeProject.addEventListener("click", e=>{
     e.preventDefault();
     if(!confirm("Disconnect from this Supabase project? You'll need to reconnect (and log in again) to sync decks.")) return;
     if(supabaseClient) supabaseClient.auth.signOut().catch(()=>{});
@@ -1364,8 +1472,12 @@ function miniCardHtml(card, opts){
         onload="this.closest('.mini-card').classList.add('has-art')"
         onerror="const l=this.closest('.art-layer'); if(l) l.remove();">
     </div>` : "";
+  const checkboxHtml = opts.checkbox ? `<label class="mini-card-check" onclick="event.stopPropagation()"><input type="checkbox" data-select-id="${card.id}" ${opts.checked?"checked":""}></label>` : "";
+  const matchHtml = opts.matchScore!=null ? `<div class="matchscore" title="Focus match score (0-100)">${Math.round(opts.matchScore)}</div>` : "";
   return `
   <div class="mini-card${sizeClass}" data-card-id="${card.id}" style="--c1:${c1};--c2:${c2}" tabindex="0" role="button" aria-label="${escapeHtml(card.name)}">
+    ${checkboxHtml}
+    ${matchHtml}
     ${art}
     <div class="head">
       ${card.energy!=null ? `<div class="cost">${card.energy}</div>` : ""}
@@ -1416,9 +1528,13 @@ function cardDetailHtml(card){
         </div>`:""}
         ${power!=null?axisBreakdownHtml(card):""}
         ${DECKBUILDABLE_TYPES.includes(card.type) ? `
-        <div class="row" style="gap:8px;">
-          <button class="btn small" data-action="add-main" data-id="${card.id}">+ Add to main deck</button>
-          <button class="btn ghost small ${"" }" data-action="view-synergy" data-id="${card.id}">View in Synergy Web →</button>
+        <div class="row wrap" style="gap:8px;align-items:center;">
+          <select id="modalAddDeckSelect" style="max-width:200px;">
+            ${STORE.decks.map(d=>`<option value="${d.id}" ${d.id===STORE.activeId?"selected":""}>${escapeHtml(d.name)}</option>`).join("")}
+          </select>
+          <button class="btn small" data-action="add-to-deck" data-id="${card.id}">+ Add</button>
+          <span class="hint" id="modalAddFeedback" style="display:none;"></span>
+          <button class="btn ghost small" data-action="view-synergy" data-id="${card.id}">View in Synergy Web →</button>
         </div>`:""}
       </div>
     </div>
@@ -1438,24 +1554,96 @@ function cardDetailHtml(card){
   </div>`;
 }
 
-function axisBreakdownHtml(card){
+function axisBreakdownHtml(card, compact){
   const profile = cardAxisProfile(card);
   return `
-    <div style="margin-bottom:12px;">
-      <div class="hint" style="margin-bottom:6px;">Positional scoring — percentile vs. cards of similar type &amp; cost, not an absolute score (e.g. a board wipe can be great Control but weak Board-building).</div>
-      <div class="grid" style="grid-template-columns:1fr;gap:4px;">
+    <div style="margin-bottom:${compact?"4px":"12px"};">
+      ${compact?"":`<div class="hint" style="margin-bottom:6px;">Positional scoring — percentile vs. cards of similar type &amp; cost, not an absolute score (e.g. a board wipe can be great Control but weak Board-building).</div>`}
+      <div class="grid" style="grid-template-columns:1fr;gap:${compact?"2px":"4px"};">
         ${AXES.map(a=>{
           const pct = profile.pct[a];
           return `<div class="row" style="gap:8px;align-items:center;" title="${escapeHtml(AXIS_DESC[a])}">
-            <div style="width:100px;flex:none;font-size:.72rem;color:var(--ink-2);">${AXIS_LABELS[a]}</div>
-            <div style="flex:1;background:var(--surface-2);border-radius:4px;height:8px;overflow:hidden;">
+            <div style="width:${compact?"84px":"100px"};flex:none;font-size:.7rem;color:var(--ink-2);">${AXIS_LABELS[a]}</div>
+            <div style="flex:1;background:var(--surface-2);border-radius:4px;height:${compact?"6px":"8px"};overflow:hidden;">
               <div style="width:${pct}%;height:100%;background:var(--accent);"></div>
             </div>
-            <div class="tabular" style="width:26px;text-align:right;font-size:.72rem;font-weight:700;">${pct}</div>
+            <div class="tabular" style="width:24px;text-align:right;font-size:.68rem;font-weight:700;">${pct}</div>
           </div>`;
         }).join("")}
       </div>
     </div>`;
+}
+
+/* ===================== GLOBAL CARD HOVER PREVIEW =====================
+   Hovering any mini-card (anywhere in the app — Card Database, deck builder
+   pool/deck list, legend picker, etc.) shows an enlarged floating preview
+   (art + text + power/axis scoring) near the cursor. Also used for
+   plain-text card names in the Meta & Tournament decklist view, optionally
+   scoped to a specific decklist's own cards ("pairs well with, within this
+   deck") via opts.withinCards. Wired up (event-delegated) in part11_boot.js. */
+let _hoverCardEl = null;
+let _hoverCardKey = null;
+let _hoverCardTimer = null;
+function hoverCardPreviewHtml(card, opts){
+  opts = opts||{};
+  const power = DECKBUILDABLE_TYPES.includes(card.type) ? cardPowerScore(card) : null;
+  const artHtml = card.img ? `<img src="${card.img}" alt="" loading="eager" decoding="async" referrerpolicy="no-referrer" onerror="this.closest('.hcp-art').remove()">` : "";
+  let synergyHtml = "";
+  if(opts.withinCards && opts.withinCards.length){
+    const pool = opts.withinCards.filter(c=>c && c.id!==card.id);
+    const tops = topSynergiesFor(card, pool, 3).filter(s=>s.score>0);
+    if(tops.length){
+      synergyHtml = `<div class="hcp-synergy">
+        <div class="hcp-label">Pairs well with, in this decklist</div>
+        ${tops.map(s=>`<div class="hcp-syn-row"><span>${escapeHtml(s.card.name)}</span><span class="tabular">${s.score}</span></div>`).join("")}
+      </div>`;
+    }
+  }
+  return `
+    <div class="hcp-body">
+      ${artHtml?`<div class="hcp-art">${artHtml}</div>`:""}
+      <div class="hcp-info">
+        <div class="hcp-name">${escapeHtml(card.name)}</div>
+        <div class="hcp-sub">${TYPE_LABEL[card.type]||card.type}${card.supertype?" · "+card.supertype:""}</div>
+        <div class="hcp-text">${renderCardText(card.text) || (card.flavor?`<em>${escapeHtml(card.flavor)}</em>`:"")}</div>
+        ${power!=null?`<div class="hcp-power">Heuristic power score: ${power}</div>`:""}
+      </div>
+    </div>
+    ${power!=null?axisBreakdownHtml(card, true):""}
+    ${synergyHtml}
+  `;
+}
+function positionHoverCardPreview(e){
+  if(!_hoverCardEl) return;
+  const w = _hoverCardEl.offsetWidth || 320;
+  let left = e.clientX + 20;
+  if(left + w > window.innerWidth - 8) left = e.clientX - w - 20;
+  left = clamp(left, 8, Math.max(8, window.innerWidth - w - 8));
+  const h = _hoverCardEl.offsetHeight || 200;
+  let top = e.clientY + 16;
+  if(top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+  _hoverCardEl.style.left = left+"px";
+  _hoverCardEl.style.top = top+"px";
+}
+function showCardHoverPreviewNow(e, card, opts){
+  if(!_hoverCardEl){ _hoverCardEl = el("div","hover-card-preview"); document.body.appendChild(_hoverCardEl); }
+  _hoverCardEl.innerHTML = hoverCardPreviewHtml(card, opts);
+  _hoverCardEl.style.display = "block";
+  positionHoverCardPreview(e);
+}
+function showCardHoverPreview(e, card, opts){
+  if(!card) return;
+  const key = card.id + (opts&&opts.withinCards ? ":scoped" : "");
+  if(_hoverCardKey===key && _hoverCardEl && _hoverCardEl.style.display==="block"){ positionHoverCardPreview(e); return; }
+  _hoverCardKey = key;
+  clearTimeout(_hoverCardTimer);
+  const cx=e.clientX, cy=e.clientY;
+  _hoverCardTimer = setTimeout(()=>{ showCardHoverPreviewNow({clientX:cx,clientY:cy}, card, opts); }, 130);
+}
+function hideCardHoverPreview(){
+  clearTimeout(_hoverCardTimer);
+  _hoverCardKey = null;
+  if(_hoverCardEl) _hoverCardEl.style.display = "none";
 }
 
 function openCardModal(cardId){
@@ -1569,7 +1757,14 @@ function renderDbResults(){
 
 
 /* ===================== VIEW: BUILDER ===================== */
-const builderState = { tab:"legend", poolQ:"", poolSort:"cost" };
+const builderState = {
+  tab:"legend", poolQ:"", poolSort:"cost",
+  poolTypes:new Set(["Unit","Spell","Gear"]), poolMech:"", poolMinCost:"", poolMaxCost:"",
+  deckView:"image",          // "image" | "list"
+  deckSelected:new Set(),    // selected main-deck card ids, for bulk remove
+  focusTags:new Set(),       // axis keys chosen as a deckbuilding "focus"
+  importText:"", importPreview:null, importMergeIntoCurrent:false,
+};
 
 function deckSelectorHtml(){
   return `
@@ -1589,28 +1784,36 @@ function renderBuilderView(){
     <div class="viewhead"><div><h2>Deck Builder</h2><p>Build your 40+ card main deck, 12-card rune deck, and pick 3 battlefields.</p></div></div>
     ${deckSelectorHtml()}
     <div class="row wrap" style="gap:14px;align-items:flex-start;">
-      <div style="flex:2;min-width:320px;">
+      <div style="flex:2;min-width:340px;">
         <div class="subtabs">
           <button class="subtab ${builderState.tab==='legend'?'active':''}" data-tab="legend">Legend</button>
-          <button class="subtab ${builderState.tab==='main'?'active':''}" data-tab="main">Main Deck (${deckMainCount(deck)})</button>
+          <button class="subtab ${builderState.tab==='main'?'active':''}" data-tab="main">Main Deck</button>
           <button class="subtab ${builderState.tab==='runes'?'active':''}" data-tab="runes">Runes (${deckRuneCount(deck)}/12)</button>
           <button class="subtab ${builderState.tab==='battlefields'?'active':''}" data-tab="battlefields">Battlefields (${deck.battlefields.length}/3)</button>
+          <button class="subtab ${builderState.tab==='import'?'active':''}" data-tab="import">Import</button>
         </div>
         <div id="builderTabBody"></div>
       </div>
-      <div style="flex:1;min-width:260px;">
+      <div style="flex:1;min-width:300px;">
         <div class="card-surface pad">
           <h3>Status</h3>
           ${legend?`<div class="row" style="margin-bottom:8px;">${miniCardHtml(legend,{small:true})}<div style="margin-left:8px;">${(legend.domain||[]).map(d=>domainChip(d)).join(" ")}</div></div>`:'<p class="hint">No Legend selected yet.</p>'}
           <div id="legalityBox"></div>
+          <hr class="hair">
+          <div class="spread" style="align-items:center;">
+            <h3 style="margin:0;">Your Main Deck (<span id="deckListCount">${deckMainCount(deck)}</span>)</h3>
+            <button class="btn ghost small" id="deckViewToggle">${builderState.deckView==='image'?'List view':'Image view'}</button>
+          </div>
+          <div id="deckSelectionBar"></div>
+          <div id="deckListPanel" style="margin-top:8px;max-height:640px;overflow-y:auto;"></div>
         </div>
       </div>
     </div>
   `;
-  byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); renderBuilderView(); });
+  byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); builderState.deckSelected=new Set(); renderBuilderView(); });
   byId("btnNewDeck").addEventListener("click", ()=>{
     const d = blankDeck("New deck "+(STORE.decks.length+1));
-    STORE.decks.push(d); STORE.activeId=d.id; saveStore(); renderBuilderView();
+    STORE.decks.push(d); STORE.activeId=d.id; builderState.deckSelected=new Set(); saveStore(); renderBuilderView();
   });
   byId("btnRenameDeck").addEventListener("click", ()=>{
     const name = prompt("New name for the deck:", deck.name);
@@ -1620,11 +1823,21 @@ function renderBuilderView(){
     if(STORE.decks.length<=1){ alert("You must have at least one deck."); return; }
     if(!confirm("Delete this deck permanently?")) return;
     STORE.decks = STORE.decks.filter(d=>d.id!==deck.id);
-    STORE.activeId = STORE.decks[0].id; saveStore(); renderBuilderView();
+    STORE.activeId = STORE.decks[0].id; builderState.deckSelected=new Set(); saveStore(); renderBuilderView();
   });
-  root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click", ()=>{ builderState.tab=b.getAttribute("data-tab"); renderBuilderView(); }));
+  root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click", ()=>{
+    builderState.tab=b.getAttribute("data-tab");
+    root.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active", x===b));
+    renderBuilderTabBody();
+  }));
+  byId("deckViewToggle").addEventListener("click", ()=>{
+    builderState.deckView = builderState.deckView==="image"?"list":"image";
+    byId("deckViewToggle").textContent = builderState.deckView==='image'?'List view':'Image view';
+    renderDeckListPanel();
+  });
   renderLegality();
   renderBuilderTabBody();
+  renderDeckListPanel();
 }
 
 function renderLegality(){
@@ -1637,6 +1850,89 @@ function renderLegality(){
     </div>`).join("") : `<div class="row" style="gap:6px;"><span class="badge" style="background:var(--good);color:#fff;">OK</span><span style="font-size:.8rem;">The deck is ready to play!</span></div>`;
 }
 
+/* ---- sidebar deck list: image or list view, multi-select checkboxes + bulk remove ---- */
+function renderDeckListPanel(){
+  const deck = activeDeck();
+  const items = deckMainCards(deck).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+  const validIds = new Set(items.map(x=>x.card.id));
+  for(const id of [...builderState.deckSelected]) if(!validIds.has(id)) builderState.deckSelected.delete(id);
+  const countEl = byId("deckListCount"); if(countEl) countEl.textContent = deckMainCount(deck);
+  renderDeckSelectionBar();
+  const box = byId("deckListPanel");
+  if(!box) return;
+  if(!items.length){ box.innerHTML = '<p class="hint">No cards added yet — browse the Main Deck tab, or Import a decklist.</p>'; return; }
+  if(builderState.deckView==="image"){
+    box.innerHTML = `<div class="deck-list-grid">${items.map(x=>`
+      <div style="position:relative;">
+        ${miniCardHtml(x.card,{small:true,qty:x.count,checkbox:true,checked:builderState.deckSelected.has(x.card.id)})}
+        <div class="row" style="justify-content:center;gap:4px;margin-top:2px;">
+          <button class="btn small" data-sub-id="${x.card.id}" style="padding:2px 8px;">−</button>
+          <button class="btn small" data-add2-id="${x.card.id}" style="padding:2px 8px;">+</button>
+        </div>
+      </div>`).join("")}</div>`;
+  } else {
+    box.innerHTML = `<div class="decklist-rows">${items.map(x=>deckRowHtml(x.card,x.count)).join("")}</div>`;
+  }
+  wireDeckListPanel(box);
+}
+
+function deckRowHtml(card, count){
+  const [c1] = cardMainDomainColorPair(card);
+  return `
+  <div class="decklist-row">
+    <label class="row" style="gap:8px;align-items:center;flex:1;min-width:0;cursor:pointer;">
+      <input type="checkbox" data-select-id="${card.id}" ${builderState.deckSelected.has(card.id)?"checked":""}>
+      <span class="tabular" style="width:20px;text-align:center;font-weight:700;color:${c1};flex:none;">${card.energy??"–"}</span>
+      <span data-open-id="${card.id}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(card.name)}</span>
+    </label>
+    <div class="row" style="gap:4px;flex:none;">
+      <button class="btn small" data-sub-id="${card.id}" style="padding:2px 8px;">−</button>
+      <span class="tabular" style="width:16px;text-align:center;">${count}</span>
+      <button class="btn small" data-add2-id="${card.id}" style="padding:2px 8px;">+</button>
+    </div>
+  </div>`;
+}
+
+function wireDeckListPanel(box){
+  box.querySelectorAll("[data-select-id]").forEach(cb=>cb.addEventListener("change", ()=>{
+    const id = cb.getAttribute("data-select-id");
+    if(cb.checked) builderState.deckSelected.add(id); else builderState.deckSelected.delete(id);
+    renderDeckSelectionBar();
+  }));
+  box.querySelectorAll("[data-sub-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(activeDeck(), elx.getAttribute("data-sub-id"), -1); refreshBuilderAfterDeckChange(); }));
+  box.querySelectorAll("[data-add2-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(activeDeck(), elx.getAttribute("data-add2-id"), 1); refreshBuilderAfterDeckChange(); }));
+  box.querySelectorAll("[data-open-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-open-id"))));
+  box.querySelectorAll("[data-card-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-card-id"))));
+}
+
+function renderDeckSelectionBar(){
+  const box = byId("deckSelectionBar");
+  if(!box) return;
+  const n = builderState.deckSelected.size;
+  if(!n){ box.innerHTML=""; return; }
+  box.innerHTML = `<div class="row" style="gap:8px;align-items:center;margin:6px 0;">
+    <span class="hint">${n} selected</span>
+    <button class="btn small danger" id="bulkRemoveBtn">Remove</button>
+    <button class="btn ghost small" id="clearSelBtn">Clear</button>
+  </div>`;
+  byId("bulkRemoveBtn").addEventListener("click", ()=>{
+    if(!confirm(`Remove ${n} card${n>1?'s':''} from the deck?`)) return;
+    const deck = activeDeck();
+    for(const id of builderState.deckSelected) delete deck.main[id];
+    builderState.deckSelected = new Set();
+    touchDeck();
+    refreshBuilderAfterDeckChange();
+  });
+  byId("clearSelBtn").addEventListener("click", ()=>{ builderState.deckSelected=new Set(); renderDeckListPanel(); });
+}
+
+function refreshBuilderAfterDeckChange(){
+  renderLegality();
+  renderDeckListPanel();
+  if(builderState.tab==="main") refreshPoolGrid();
+  if(builderState.tab==="runes" || builderState.tab==="battlefields") renderBuilderTabBody();
+}
+
 function renderBuilderTabBody(){
   const body = byId("builderTabBody");
   const deck = activeDeck();
@@ -1645,45 +1941,11 @@ function renderBuilderTabBody(){
     body.innerHTML = `<div class="card-grid">${LEGENDS.map(l=>`
       <div data-legend-id="${l.id}" style="cursor:pointer;${l.id===deck.legendId?'outline:2px solid var(--accent);border-radius:12px;':''}">${miniCardHtml(l)}</div>`).join("")}</div>`;
     body.querySelectorAll("[data-legend-id]").forEach(elx=>elx.addEventListener("click", ()=>{
-      setLegend(deck, elx.getAttribute("data-legend-id")); renderBuilderView();
+      setLegend(deck, elx.getAttribute("data-legend-id")); builderState.deckSelected=new Set(); renderBuilderView();
     }));
     return;
   }
-  if(builderState.tab==="main"){
-    const pool = POOL_MAIN.filter(c=>cardLegalForLegend(c, legend));
-    const q = builderState.poolQ.toLowerCase();
-    const filtered = pool.filter(c=>!q || c.name.toLowerCase().includes(q) || (c.text||"").toLowerCase().includes(q))
-      .sort((a,b)=> builderState.poolSort==="cost" ? (a.energy??99)-(b.energy??99) : a.name.localeCompare(b.name));
-    const deckItems = deckMainCards(deck).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
-    body.innerHTML = `
-      ${!legend?'<p class="hint">Select a Legend first to see legal cards.</p>':''}
-      <div class="row wrap" style="gap:8px;margin:10px 0;">
-        <input type="search" id="poolSearch" placeholder="Search within your Legend's colors…" value="${escapeHtml(builderState.poolQ)}" style="flex:1;min-width:180px;">
-      </div>
-      <div class="row wrap" style="gap:18px;align-items:flex-start;">
-        <div style="flex:1;min-width:260px;">
-          <h4>Available cards (${filtered.length})</h4>
-          <div class="card-grid scrollx" style="max-height:520px;overflow-y:auto;">${filtered.slice(0,150).map(c=>`
-            <div data-add-id="${c.id}" style="cursor:pointer;">${miniCardHtml(c,{qty:deck.main[c.id]||0})}</div>`).join("")}</div>
-        </div>
-        <div style="flex:1;min-width:260px;">
-          <h4>Your deck (${deckMainCount(deck)})</h4>
-          <div class="deck-list-grid scrollx" style="max-height:520px;overflow-y:auto;">${deckItems.map(x=>`
-            <div style="position:relative;">
-              ${miniCardHtml(x.card,{small:true,qty:x.count})}
-              <div class="row" style="justify-content:center;gap:4px;margin-top:2px;">
-                <button class="btn small" data-sub-id="${x.card.id}" style="padding:2px 8px;">−</button>
-                <button class="btn small" data-add2-id="${x.card.id}" style="padding:2px 8px;">+</button>
-              </div>
-            </div>`).join("") || '<p class="hint">No cards added yet.</p>'}</div>
-        </div>
-      </div>`;
-    byId("poolSearch").addEventListener("input", debounce(e=>{ builderState.poolQ=e.target.value; renderBuilderTabBody(); },150));
-    body.querySelectorAll("[data-add-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(deck, elx.getAttribute("data-add-id"), 1); renderBuilderView(); }));
-    body.querySelectorAll("[data-add2-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(deck, elx.getAttribute("data-add2-id"), 1); renderBuilderView(); }));
-    body.querySelectorAll("[data-sub-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(deck, elx.getAttribute("data-sub-id"), -1); renderBuilderView(); }));
-    return;
-  }
+  if(builderState.tab==="main"){ renderMainPoolTab(body, deck, legend); return; }
   if(builderState.tab==="runes"){
     const legalRunes = POOL_RUNE.filter(c=>cardLegalForLegend(c, legend));
     body.innerHTML = `
@@ -1711,6 +1973,192 @@ function renderBuilderTabBody(){
     body.querySelectorAll("[data-bf-id]").forEach(elx=>elx.addEventListener("click", ()=>{ toggleBattlefield(deck, elx.getAttribute("data-bf-id")); renderBuilderView(); }));
     return;
   }
+  if(builderState.tab==="import"){ renderImportTab(body); return; }
+}
+
+/* ---- Main Deck tab: filterable/sortable pool browser + optional playstyle focus ---- */
+function renderMainPoolTab(body, deck, legend){
+  body.innerHTML = `
+    ${!legend?'<p class="hint">Select a Legend first to see legal cards.</p>':''}
+    <div class="card-surface pad" style="margin:10px 0;">
+      <div class="row wrap" style="gap:8px;">
+        <input type="search" id="poolSearch" placeholder="Search within your Legend's colors…" value="${escapeHtml(builderState.poolQ)}" style="flex:1;min-width:180px;">
+        <select id="poolSort">
+          <option value="cost" ${builderState.poolSort==='cost'?'selected':''}>Sort: Cost</option>
+          <option value="name" ${builderState.poolSort==='name'?'selected':''}>Sort: Name</option>
+          <option value="power" ${builderState.poolSort==='power'?'selected':''}>Sort: Power score</option>
+        </select>
+      </div>
+      <div class="row wrap" style="gap:6px;margin-top:8px;align-items:center;">
+        <span class="hint" style="margin-right:2px;">Type:</span>
+        ${["Unit","Spell","Gear"].map(t=>`<span class="chip clickable ${builderState.poolTypes.has(t)?"on":""}" data-toggle-ptype="${t}">${TYPE_LABEL[t]}</span>`).join("")}
+        <span class="hint" style="margin:0 2px 0 10px;">Mechanic:</span>
+        <select id="poolMech"><option value="">All</option>${Object.entries(MECH_META).map(([k,v])=>`<option value="${k}" ${builderState.poolMech===k?'selected':''}>${v.label}</option>`).join("")}</select>
+        <span class="hint" style="margin:0 2px 0 10px;">Cost:</span>
+        <input type="number" id="poolMinCost" placeholder="min" min="0" max="12" value="${escapeHtml(builderState.poolMinCost)}" style="width:56px;">
+        <span class="hint">–</span>
+        <input type="number" id="poolMaxCost" placeholder="max" min="0" max="12" value="${escapeHtml(builderState.poolMaxCost)}" style="width:56px;">
+      </div>
+      <hr class="hair">
+      <div class="row wrap" style="gap:6px;align-items:center;">
+        <span class="hint" style="margin-right:2px;">Focus on:</span>
+        ${AXES.map(a=>`<span class="chip clickable ${builderState.focusTags.has(a)?"on":""}" data-toggle-focus="${a}" title="${escapeHtml(AXIS_DESC[a])}">${AXIS_LABELS[a]}</span>`).join("")}
+        <span id="focusHint" class="hint" style="margin-left:6px;display:${builderState.focusTags.size?"":"none"}">Sorted by match to your selected focus — badge on each card shows its match score (0–100).</span>
+      </div>
+    </div>
+    <h4 id="poolCount">Available cards</h4>
+    <div class="card-grid scrollx" style="max-height:640px;overflow-y:auto;" id="poolGrid"></div>
+  `;
+  refreshPoolGrid();
+  byId("poolSearch").addEventListener("input", debounce(e=>{ builderState.poolQ=e.target.value; refreshPoolGrid(); },150));
+  byId("poolSort").addEventListener("change", e=>{ builderState.poolSort=e.target.value; refreshPoolGrid(); });
+  byId("poolMech").addEventListener("change", e=>{ builderState.poolMech=e.target.value; refreshPoolGrid(); });
+  byId("poolMinCost").addEventListener("input", debounce(e=>{ builderState.poolMinCost=e.target.value; refreshPoolGrid(); },150));
+  byId("poolMaxCost").addEventListener("input", debounce(e=>{ builderState.poolMaxCost=e.target.value; refreshPoolGrid(); },150));
+  body.querySelectorAll("[data-toggle-ptype]").forEach(chip=>chip.addEventListener("click", ()=>{
+    const t = chip.getAttribute("data-toggle-ptype");
+    if(builderState.poolTypes.has(t)) builderState.poolTypes.delete(t); else builderState.poolTypes.add(t);
+    chip.classList.toggle("on", builderState.poolTypes.has(t));
+    refreshPoolGrid();
+  }));
+  body.querySelectorAll("[data-toggle-focus]").forEach(chip=>chip.addEventListener("click", ()=>{
+    const a = chip.getAttribute("data-toggle-focus");
+    if(builderState.focusTags.has(a)) builderState.focusTags.delete(a); else builderState.focusTags.add(a);
+    chip.classList.toggle("on", builderState.focusTags.has(a));
+    byId("focusHint").style.display = builderState.focusTags.size? "" : "none";
+    refreshPoolGrid();
+  }));
+}
+
+function filteredPoolCards(legend){
+  const q = builderState.poolQ.trim().toLowerCase();
+  const min = builderState.poolMinCost!==""? parseInt(builderState.poolMinCost,10) : null;
+  const max = builderState.poolMaxCost!==""? parseInt(builderState.poolMaxCost,10) : null;
+  let list = POOL_MAIN.filter(c=>cardLegalForLegend(c, legend));
+  list = list.filter(c=>{
+    if(builderState.poolTypes.size && !builderState.poolTypes.has(c.type)) return false;
+    if(builderState.poolMech && !(c.mech||[]).includes(builderState.poolMech)) return false;
+    if(min!=null && !Number.isNaN(min) && (c.energy==null || c.energy<min)) return false;
+    if(max!=null && !Number.isNaN(max) && (c.energy==null || c.energy>max)) return false;
+    if(q && !(c.name.toLowerCase().includes(q) || (c.text||"").toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if(builderState.focusTags.size){
+    list.sort((a,b)=> focusMatchScore(b)-focusMatchScore(a) || (a.energy??99)-(b.energy??99));
+  } else if(builderState.poolSort==="cost"){
+    list.sort((a,b)=> (a.energy??99)-(b.energy??99) || a.name.localeCompare(b.name));
+  } else if(builderState.poolSort==="power"){
+    list.sort((a,b)=> cardPowerScore(b)-cardPowerScore(a));
+  } else {
+    list.sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  return list;
+}
+function focusMatchScore(card){
+  const profile = cardAxisProfile(card);
+  let sum=0; for(const a of builderState.focusTags) sum += profile.pct[a];
+  return sum/builderState.focusTags.size;
+}
+function refreshPoolGrid(){
+  const deck = activeDeck();
+  const legend = deckLegend(deck);
+  const filtered = filteredPoolCards(legend);
+  const countEl = byId("poolCount");
+  if(countEl){
+    countEl.textContent = filtered.length>150
+      ? `Available cards (showing 150 of ${filtered.length} — narrow with search/filters to see more)`
+      : `Available cards (${filtered.length})`;
+  }
+  renderPoolGrid(filtered, deck);
+}
+function renderPoolGrid(filtered, deck){
+  const grid = byId("poolGrid");
+  if(!grid) return;
+  const hasFocus = builderState.focusTags.size>0;
+  grid.innerHTML = filtered.slice(0,150).map(c=>{
+    const score = hasFocus ? focusMatchScore(c) : null;
+    return `<div data-add-id="${c.id}" style="cursor:pointer;">${miniCardHtml(c,{qty:deck.main[c.id]||0, matchScore:score})}</div>`;
+  }).join("");
+  grid.querySelectorAll("[data-add-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(activeDeck(), elx.getAttribute("data-add-id"), 1); refreshBuilderAfterDeckChange(); }));
+}
+
+/* ---- Import tab: paste text, parse, preview, commit ---- */
+function renderImportTab(body){
+  const preview = builderState.importPreview;
+  body.innerHTML = `
+    <div class="card-surface pad" style="margin:10px 0;">
+      <h3>Import a decklist</h3>
+      <p class="hint" style="margin-bottom:8px;">Paste a decklist as text — works with the common formats: <span class="tabular">3 Card Name</span>, <span class="tabular">3x Card Name</span>, <span class="tabular">Card Name x3</span>, and lines with a trailing set/number like <span class="tabular">2 Card Name (UNL-042)</span>. Section headers (Legend / Main Deck / Runes / Battlefields) and blank/comment lines are ignored automatically — cards are routed by their actual type, so headers are optional.</p>
+      <textarea id="importText" rows="10" style="width:100%;font-family:var(--font-mono);font-size:.82rem;padding:8px;border-radius:8px;border:1px solid var(--hair-strong);background:var(--surface);color:var(--ink);" placeholder="1 Vi - Piltover Enforcer&#10;3 Bewitching Spirit&#10;3x Poppy - Paragon&#10;...">${escapeHtml(builderState.importText)}</textarea>
+      <div class="row" style="gap:14px;margin-top:8px;align-items:center;">
+        <button class="btn small" id="importParseBtn">Parse</button>
+        <label class="row" style="gap:6px;"><input type="checkbox" id="importMerge" ${builderState.importMergeIntoCurrent?"checked":""}> Add to current deck instead of creating a new one</label>
+      </div>
+    </div>
+    <div id="importPreviewBox">${preview ? renderImportPreviewHtml(preview) : ""}</div>
+  `;
+  byId("importText").addEventListener("input", e=>{ builderState.importText = e.target.value; });
+  byId("importParseBtn").addEventListener("click", ()=>{
+    builderState.importPreview = parseDecklistText(builderState.importText);
+    byId("importPreviewBox").innerHTML = renderImportPreviewHtml(builderState.importPreview);
+    wireImportPreview();
+  });
+  byId("importMerge").addEventListener("change", e=>{ builderState.importMergeIntoCurrent = e.target.checked; });
+  wireImportPreview();
+}
+function renderImportPreviewHtml(preview){
+  const mainItems = preview.matched.filter(m=>m.target==="main");
+  const runeItems = preview.matched.filter(m=>m.target==="rune");
+  const bfItems = preview.matched.filter(m=>m.target==="battlefield");
+  const mainTotal = mainItems.reduce((a,m)=>a+m.qty,0);
+  const runeTotal = runeItems.reduce((a,m)=>a+m.qty,0);
+  return `
+    <div class="card-surface pad">
+      <h3>Preview</h3>
+      <div class="row wrap" style="gap:22px;margin-bottom:10px;">
+        <div><strong>${preview.legend?escapeHtml(preview.legend.name):"No legend detected"}</strong><div class="hint">Legend</div></div>
+        <div><strong>${mainTotal}</strong><div class="hint">Main deck cards</div></div>
+        <div><strong>${runeTotal}</strong><div class="hint">Rune cards</div></div>
+        <div><strong>${bfItems.length}</strong><div class="hint">Battlefields</div></div>
+      </div>
+      ${preview.unmatched.length ? `
+        <div style="margin-bottom:10px;">
+          <div class="hint" style="color:var(--warn);font-weight:700;margin-bottom:4px;">${preview.unmatched.length} line(s) couldn't be matched to a card:</div>
+          <div class="hint" style="font-family:var(--font-mono);white-space:pre-wrap;">${preview.unmatched.map(l=>escapeHtml(l)).join("\n")}</div>
+        </div>` : ""}
+      ${preview.matched.length ? `
+        <div class="row wrap" style="gap:6px;margin-bottom:10px;">
+          ${preview.matched.map(m=>`<span class="chip">${m.qty}× ${escapeHtml(m.card.name)}</span>`).join("")}
+        </div>` : '<p class="hint">No matching cards found — nothing to import.</p>'}
+      <div class="row" style="gap:8px;">
+        <button class="btn small" id="importCommitBtn" ${preview.matched.length?"":"disabled"}>${builderState.importMergeIntoCurrent?"Add to current deck":"Create new deck from this list"}</button>
+      </div>
+    </div>
+  `;
+}
+function wireImportPreview(){
+  const btn = byId("importCommitBtn");
+  if(btn) btn.addEventListener("click", ()=>commitImport(builderState.importPreview));
+}
+function commitImport(preview){
+  if(!preview || !preview.matched.length) return;
+  let deck;
+  if(builderState.importMergeIntoCurrent){
+    deck = activeDeck();
+  } else {
+    deck = blankDeck(preview.legend ? `Imported: ${preview.legend.name}` : "Imported Deck");
+    STORE.decks.push(deck);
+    STORE.activeId = deck.id;
+  }
+  if(preview.legend) setLegend(deck, preview.legend.id);
+  for(const item of preview.matched){
+    if(item.target==="main") addToMain(deck, item.card.id, item.qty);
+    else if(item.target==="rune") addToRunes(deck, item.card.id, item.qty);
+    else if(item.target==="battlefield" && deck.battlefields.length<3 && !deck.battlefields.includes(item.card.id)) toggleBattlefield(deck, item.card.id);
+  }
+  saveStore();
+  builderState.importText=""; builderState.importPreview=null; builderState.tab="main"; builderState.deckSelected=new Set();
+  renderBuilderView();
 }
 
 
@@ -2311,20 +2759,11 @@ function renderGraphSidebar(nodes, edges){
 }
 
 
-/* ===================== VIEW: META ===================== */
-const NAME_TO_ID = new Map();
-for(const c of CARDS){ if(!NAME_TO_ID.has(c.name.toLowerCase())) NAME_TO_ID.set(c.name.toLowerCase(), c.id); }
-function findCardByName(name){
-  if(!name) return null;
-  const key = name.toLowerCase().trim();
-  if(NAME_TO_ID.has(key)) return CARD_BY_ID.get(NAME_TO_ID.get(key));
-  // loose fallback: startsWith match (handles "Ornn, Blacksmith" vs "Ornn - Blacksmith")
-  const norm = key.replace(/[,\-–]/g," ").replace(/\s+/g," ").trim();
-  for(const [n,id] of NAME_TO_ID){ if(n.replace(/[,\-–]/g," ").replace(/\s+/g," ").trim()===norm) return CARD_BY_ID.get(id); }
-  return null;
-}
-
-const metaState = { openEvent:null, compareDeckKey:null };
+/* ===================== VIEW: META =====================
+   Card name lookups use the shared findCardByName() (part3_state.js), which
+   already covers exact match, "Legend - Title" vs "Legend, Title" punctuation
+   variance, and a unique-substring fallback. */
+const metaState = { openEvent:null, compareDeckKey:null, hoverPool:[] };
 
 function renderMetaView(){
   const root = byId("view-meta");
@@ -2417,20 +2856,60 @@ function renderCompareModal(metaDeck){
   const rows = (metaDeck.decklist||[]).map(entry=>{
     const card = findCardByName(entry.card_name);
     const inActive = card && activeIds.has(card.id);
-    return { name:entry.card_name, count:entry.count, found: !!card, inActive };
+    return { name:entry.card_name, count:entry.count, found: !!card, inActive, card };
   });
   const overlap = rows.filter(r=>r.inActive).length;
+  const matchedCards = rows.map(r=>r.card).filter(Boolean);
+  metaState.hoverPool = matchedCards; // scopes the hover-preview's "pairs well with" synergy list
+  const legendCard = findCardByName(metaDeck.legend) || matchedCards.find(c=>c.type==="Legend");
+  const legendHtml = legendCard ? `
+    <div class="row" style="gap:14px;align-items:flex-start;margin:10px 0;">
+      <div style="flex:none;">${miniCardHtml(legendCard,{large:true})}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="row wrap" style="gap:6px;margin-bottom:6px;">${(legendCard.domain||[]).map(d=>domainChip(d)).join(" ")}</div>
+        <p class="hint" style="font-size:.82rem;">${renderCardText(legendCard.text) || ""}</p>
+      </div>
+    </div>` : "";
   const back = el("div","modal-back"); back.id="modalBack";
   back.innerHTML = `<div class="modal pad">
     <div class="spread"><h2>${escapeHtml(metaDeck.archetype_name||metaDeck.legend||"Meta deck")}</h2><button class="btn ghost small" data-action="close-modal">Close</button></div>
     <p class="hint">${escapeHtml(metaDeck.legend||"")} · ${escapeHtml(metaDeck.placement||"")} ${metaDeck.record?"· "+escapeHtml(metaDeck.record):""}</p>
-    <p>${overlap} of ${rows.length} cards in this meta deck are also in your active deck ("${escapeHtml(activeDeck().name)}").</p>
+    ${legendHtml}
+    <div class="row" style="gap:10px;align-items:center;margin-bottom:6px;">
+      <button class="btn small" id="metaSaveDeckBtn">+ Save as new deck</button>
+      <span class="hint">${overlap} of ${rows.length} cards in this meta deck are also in your active deck ("${escapeHtml(activeDeck().name)}").</span>
+    </div>
+    <p class="hint" style="margin-bottom:6px;">Hover a card name below for its art, scoring, and which other cards in this decklist it pairs well with.</p>
     <div class="scrollx"><table><thead><tr><th>Card</th><th>Count</th><th>In your deck?</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td class="tabular">${r.count}</td><td>${r.inActive?'<span class="badge" style="background:var(--good);color:#fff;">Yes</span>':(r.found?'<span class="badge" style="background:var(--surface-3);color:var(--ink-2);">No</span>':'<span class="badge" style="background:var(--warn);color:#fff;">Not in database</span>')}</td></tr>`).join("")}
+      ${rows.map(r=>`<tr><td>${r.card?`<span class="hoverable-card-name" data-decklist-card-id="${r.card.id}">${escapeHtml(r.name)}</span>`:escapeHtml(r.name)}</td><td class="tabular">${r.count}</td><td>${r.inActive?'<span class="badge" style="background:var(--good);color:#fff;">Yes</span>':(r.found?'<span class="badge" style="background:var(--surface-3);color:var(--ink-2);">No</span>':'<span class="badge" style="background:var(--warn);color:#fff;">Not in database</span>')}</td></tr>`).join("")}
     </tbody></table></div>
   </div>`;
   back.addEventListener("click", e=>{ if(e.target===back) closeModal(); });
   document.body.appendChild(back);
+  byId("metaSaveDeckBtn").addEventListener("click", ()=>saveMetaDecklistAsDeck(metaDeck, rows));
+}
+
+function saveMetaDecklistAsDeck(metaDeck, rows){
+  const legendCard = findCardByName(metaDeck.legend) || rows.map(r=>r.card).find(c=>c && c.type==="Legend");
+  const deck = blankDeck(metaDeck.archetype_name || (metaDeck.legend ? metaDeck.legend+" (meta)" : "Imported meta deck"));
+  if(legendCard) deck.legendId = legendCard.id;
+  let skipped = 0;
+  for(const r of rows){
+    const card = r.card;
+    if(!card){ skipped++; continue; }
+    if(card.type==="Legend"){ deck.legendId = card.id; continue; }
+    if(card.type==="Rune"){ deck.runes[card.id] = clamp((deck.runes[card.id]||0)+r.count, 0, card.supertype==="Basic"?12:3); continue; }
+    if(card.type==="Battlefield"){ if(!deck.battlefields.includes(card.id) && deck.battlefields.length<3) deck.battlefields.push(card.id); continue; }
+    deck.main[card.id] = clamp((deck.main[card.id]||0)+r.count, 0, copyLimit(card));
+  }
+  STORE.decks.push(deck);
+  STORE.activeId = deck.id;
+  saveStore();
+  renderTopbarLegendPill();
+  closeModal();
+  switchView("builder");
+  const nb = document.querySelector("[data-view='builder']"); if(nb) nb.click();
+  alert(`Saved "${deck.name}" as a new deck in your Deck Builder${skipped?` (${skipped} card(s) not found in the database were skipped)`:""}.`);
 }
 
 
@@ -2785,8 +3264,18 @@ function wireGlobalEvents(){
     if(closeBtn){ closeModal(); return; }
     const openCardBtn = e.target.closest("[data-action='open-card']");
     if(openCardBtn){ openCardModal(openCardBtn.getAttribute("data-id")); return; }
-    const addMainBtn = e.target.closest("[data-action='add-main']");
-    if(addMainBtn){ addToMain(activeDeck(), addMainBtn.getAttribute("data-id"), 1); closeModal(); if(currentView==="builder") renderBuilderView(); renderTopbarLegendPill(); return; }
+    const addToDeckBtn = e.target.closest("[data-action='add-to-deck']");
+    if(addToDeckBtn){
+      const sel = byId("modalAddDeckSelect");
+      const targetId = sel ? sel.value : STORE.activeId;
+      const deck = STORE.decks.find(d=>d.id===targetId) || activeDeck();
+      addToMain(deck, addToDeckBtn.getAttribute("data-id"), 1);
+      const fb = byId("modalAddFeedback");
+      if(fb){ fb.textContent = `Added to "${deck.name}".`; fb.style.display=""; }
+      if(currentView==="builder") renderBuilderView();
+      renderTopbarLegendPill();
+      return;
+    }
     const synergyBtn = e.target.closest("[data-action='view-synergy']");
     if(synergyBtn){ graphState.centerId = synergyBtn.getAttribute("data-id"); graphState.mode="card"; closeModal(); switchView("synergy"); document.querySelector("[data-view='synergy']").click(); return; }
   });
@@ -2800,6 +3289,31 @@ function wireGlobalEvents(){
   });
   document.body.addEventListener("mouseout", e=>{
     if(e.target.closest(".kwterm")) hideKwTooltip();
+  });
+  // card hover-preview delegation: any mini-card anywhere, or a hoverable
+  // card-name span in the Meta & Tournament decklist view
+  document.body.addEventListener("mouseover", e=>{
+    const mc = e.target.closest(".mini-card[data-card-id]");
+    if(mc && !mc.closest(".modal")){
+      const card = CARD_BY_ID.get(mc.getAttribute("data-card-id"));
+      if(card) showCardHoverPreview(e, card);
+      return;
+    }
+    const dn = e.target.closest("[data-decklist-card-id]");
+    if(dn){
+      const card = CARD_BY_ID.get(dn.getAttribute("data-decklist-card-id"));
+      if(card) showCardHoverPreview(e, card, { withinCards: metaState.hoverPool||[] });
+    }
+  });
+  document.body.addEventListener("mousemove", e=>{
+    if(e.target.closest(".mini-card[data-card-id]") || e.target.closest("[data-decklist-card-id]")) positionHoverCardPreview(e);
+  });
+  document.body.addEventListener("mouseout", e=>{
+    const leavingEl = e.target.closest(".mini-card[data-card-id]") || e.target.closest("[data-decklist-card-id]");
+    if(!leavingEl) return;
+    const to = e.relatedTarget;
+    if(to && leavingEl.contains(to)) return;
+    hideCardHoverPreview();
   });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ closeModal(); closeAccountModal(); } });
 }
