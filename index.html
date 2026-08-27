@@ -331,12 +331,52 @@ table tr:hover td{ background:var(--surface-2); }
   background:linear-gradient(160deg, var(--c1), var(--c2));
 }
 .decklist-thumb img{ display:block; width:100%; height:100%; object-fit:cover; object-position:top center; }
-/* steppers fade in on hover; the qty count next to them stays put and
-   always visible (it's a sibling span, not part of the faded group) */
+/* steppers (and, in the text-only List view, the select checkbox) fade in
+   on hover as one cluster; the qty count next to them stays put and always
+   visible (it's a sibling span, not part of the faded group) */
 .decklist-row .deck-row-stepper{ opacity:0; pointer-events:none; transition:opacity .12s ease; }
 .decklist-row:hover .deck-row-stepper{ opacity:1; pointer-events:auto; }
 .deck-image-item .deck-stepper-row{ opacity:0; pointer-events:none; transition:opacity .12s ease; }
 .deck-image-item:hover .deck-stepper-row{ opacity:1; pointer-events:auto; }
+
+/* ---------- deck list view segmented toggle (List / Compact / Image) ---------- */
+.viewseg{ display:inline-flex; gap:2px; background:var(--surface-2); padding:2px; border-radius:8px; flex:none; }
+.viewseg button{ border:none; background:transparent; padding:4px 10px; border-radius:6px; font-size:.72rem; font-weight:700; color:var(--ink-muted); cursor:pointer; }
+.viewseg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow-1); }
+.viewseg button:hover:not(.active){ color:var(--ink-2); }
+
+/* ---------- Compact deck-list view: 2-column, small art thumb + hover-reveal controls ---------- */
+.decklist-compact-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.compact-item{ display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:8px; background:var(--surface-2); position:relative; cursor:pointer; overflow:hidden; }
+.compact-item:hover{ background:var(--surface-3); }
+.compact-thumb{ width:30px; height:41px; flex:none; border-radius:5px; overflow:hidden; position:relative; background:linear-gradient(160deg, var(--c1), var(--c2)); }
+.compact-thumb img{ display:block; width:100%; height:100%; object-fit:cover; object-position:top center; }
+.compact-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.compact-name{ font-size:.76rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.compact-cost{ font-size:.64rem; color:var(--ink-muted); font-family:var(--font-mono); }
+.compact-qty{ font-family:var(--font-mono); font-weight:700; font-size:.78rem; flex:none; color:var(--ink-2); }
+.compact-item .deck-stepper-row{
+  position:absolute; right:4px; bottom:4px; background:var(--surface); border-radius:7px; padding:2px 4px;
+  box-shadow:var(--shadow-2); opacity:0; pointer-events:none; transition:opacity .12s ease; margin:0 !important; gap:3px !important;
+}
+.compact-item:hover .deck-stepper-row{ opacity:1; pointer-events:auto; }
+
+/* ---------- Draw-chance calculator: per-card trash/library panel ---------- */
+.statcard-list{ display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto; }
+.statcard-row{ display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; cursor:pointer; }
+.statcard-row:hover{ background:var(--surface-2); }
+.statcard-thumb{ width:28px; height:38px; flex:none; border-radius:5px; overflow:hidden; position:relative; background:linear-gradient(160deg, var(--c1), var(--c2)); }
+.statcard-thumb img{ display:block; width:100%; height:100%; object-fit:cover; object-position:top center; }
+.statcard-name{ flex:1; min-width:0; font-size:.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.statcard-qty{ font-family:var(--font-mono); font-size:.7rem; color:var(--ink-muted); flex:none; }
+.statcard-trash{ display:flex; align-items:center; gap:4px; flex:none; }
+.statcard-trash button{ width:20px; height:20px; padding:0; border-radius:5px; border:1px solid var(--hair-strong); background:var(--surface); color:var(--ink); font-weight:700; font-size:.72rem; cursor:pointer; line-height:1; }
+.statcard-trash button:hover{ background:var(--surface-2); }
+.statcard-trash .n{ width:16px; text-align:center; font-family:var(--font-mono); font-size:.72rem; font-weight:700; }
+.libctl{ display:inline-flex; align-items:center; gap:4px; }
+.libctl button{ width:22px; height:22px; padding:0; border-radius:6px; border:1px solid var(--hair-strong); background:var(--surface); color:var(--ink); font-weight:700; cursor:pointer; }
+.libctl button:hover{ background:var(--surface-2); }
+.libctl input[type=number]{ width:56px; text-align:center; padding:4px 2px; }
 
 /* ---------- tabs ---------- */
 .subtabs{ display:flex; gap:4px; border-bottom:1px solid var(--hair); margin-bottom:16px; }
@@ -1437,6 +1477,28 @@ function categoryDrawSeries(deck, cardIds, maxTurn, onPlay, atLeastK){
   return out;
 }
 
+/* Same as categoryDrawSeries, but for the draw-chance calculator's "what if
+   some copies are already gone" simulation: the population (library size)
+   is overridable rather than always the full main-deck count, and per-card
+   trash counts shrink both the population and — for cards belonging to
+   this particular category — the successes. trashMap is {cardId: count}. */
+function categoryDrawSeriesAdjusted(deck, cardIds, maxTurn, onPlay, atLeastK, libSize, trashMap){
+  trashMap = trashMap || {};
+  let K = 0;
+  for(const id of cardIds){
+    const have = deck.main[id]||0;
+    const trashed = Math.min(have, trashMap[id]||0);
+    K += have - trashed;
+  }
+  const N = Math.max(K, Math.round(libSize)||0); // population can't be smaller than the successes still in it
+  const out = [];
+  for(let T=0; T<=maxTurn; T++){
+    const n = cardsSeenByTurn(T, onPlay);
+    out.push({turn:T, p: hyperAtLeast(N,K,n,atLeastK||1)});
+  }
+  return out;
+}
+
 
 /* ===================== POSITIONAL / CONTEXTUAL AXIS SCORING =====================
    Scores every deckbuildable card (Unit/Spell/Gear) along 8 situational axes
@@ -2022,7 +2084,7 @@ function renderDbResults(){
 const builderState = {
   tab:"legend", legendQ:"", poolQ:"", poolSort:"cost",
   poolTypes:new Set(["Unit","Spell","Gear"]), poolMech:"", poolKeyword:"", poolMinCost:"", poolMaxCost:"",
-  deckView:"image",          // "image" | "list" — shared by the Main Deck and Sideboard panels
+  deckView:"image",          // "list" | "compact" | "image" — shared by the Main Deck and Sideboard panels
   deckSelected:new Set(),    // selected main-deck card ids, for bulk remove
   sideSelected:new Set(),    // selected sideboard card ids, for bulk remove
   focusTags:new Set(),       // axis keys chosen as a deckbuilding "focus"
@@ -2068,7 +2130,11 @@ function renderBuilderView(){
           <hr class="hair">
           <div class="spread" style="align-items:center;">
             <h3 style="margin:0;">Your Main Deck (<span id="deckListCount">${deckMainCount(deck)}</span>)</h3>
-            <button class="btn ghost small" id="deckViewToggle">${builderState.deckView==='image'?'List view':'Image view'}</button>
+            <div class="viewseg" id="deckViewSeg">
+              <button data-deckview="list" class="${builderState.deckView==='list'?'active':''}">List</button>
+              <button data-deckview="compact" class="${builderState.deckView==='compact'?'active':''}">Compact</button>
+              <button data-deckview="image" class="${builderState.deckView==='image'?'active':''}">Image</button>
+            </div>
           </div>
           <div id="deckSelectionBar"></div>
           <div id="deckListPanel" style="margin-top:8px;max-height:420px;overflow-y:auto;"></div>
@@ -2101,12 +2167,12 @@ function renderBuilderView(){
     root.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active", x===b));
     renderBuilderTabBody();
   }));
-  byId("deckViewToggle").addEventListener("click", ()=>{
-    builderState.deckView = builderState.deckView==="image"?"list":"image";
-    byId("deckViewToggle").textContent = builderState.deckView==='image'?'List view':'Image view';
+  byId("deckViewSeg").querySelectorAll("[data-deckview]").forEach(b=>b.addEventListener("click", ()=>{
+    builderState.deckView = b.getAttribute("data-deckview");
+    byId("deckViewSeg").querySelectorAll("[data-deckview]").forEach(x=>x.classList.toggle("active", x===b));
     renderZonePanel("main");
     renderZonePanel("side");
-  });
+  }));
   renderLegality();
   renderStatusCurve();
   renderBuilderTabBody();
@@ -2184,33 +2250,61 @@ function renderZonePanel(zone){
           <button class="btn small ghost" data-move-id="${x.card.id}" title="${zone==='side'?'Move to Main Deck':'Move to Sideboard'}" style="padding:2px 6px;">${zone==='side'?'→ Main':'→ Side'}</button>
         </div>
       </div>`).join("")}</div>`;
+  } else if(builderState.deckView==="compact"){
+    box.innerHTML = `<div class="decklist-compact-grid">${items.map(x=>compactRowHtml(x.card,x.count, zone, sel)).join("")}</div>`;
   } else {
     box.innerHTML = `<div class="decklist-rows">${items.map(x=>deckRowHtml(x.card,x.count, zone, sel)).join("")}</div>`;
   }
   wireZonePanel(box, zone);
 }
 
-/* Click anywhere on a row opens the card's detail modal; the −/+ steppers
-   and the move-to-other-zone button only fade in on hover (via CSS,
-   .deck-row-stepper) so the row reads cleanly at rest, but the quantity
-   itself always stays visible. The checkbox and buttons stop click
-   propagation so they don't also pop the modal open. data-decklist-card-id
-   also drives the global hover-preview (see part11_boot.js), scoped to
-   "pairs well with, in this deck". */
+/* Click anywhere on a row opens the card's detail modal; the checkbox,
+   the −/+ steppers, and the move-to-other-zone button are one cluster
+   (.deck-row-stepper) that only fades in on hover, so the row reads
+   cleanly at rest with just cost/name/qty visible — the quantity itself
+   always stays visible since it's a separate sibling span. The checkbox
+   and buttons stop click propagation so they don't also pop the modal
+   open. data-decklist-card-id also drives the global hover-preview (see
+   part11_boot.js), scoped to "pairs well with, in this deck". This is the
+   pure-text List view — no art thumbnail (see compactRowHtml for the
+   2-column view that keeps one). */
 function deckRowHtml(card, count, zone, sel){
-  const [c1,c2] = cardMainDomainColorPair(card);
-  const thumb = `<div class="decklist-thumb" style="--c1:${c1};--c2:${c2}">${card.img?`<img src="${card.img}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:""}</div>`;
+  const [c1] = cardMainDomainColorPair(card);
   return `
   <div class="decklist-row" data-decklist-card-id="${card.id}" data-open-id="${card.id}">
-    <input type="checkbox" data-select-id="${card.id}" ${sel.has(card.id)?"checked":""} onclick="event.stopPropagation()">
-    ${thumb}
     <span class="tabular" style="width:20px;text-align:center;font-weight:700;color:${c1};flex:none;">${card.energy??"–"}</span>
     <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(card.name)}</span>
+    <span class="tabular" style="width:24px;text-align:center;flex:none;">×${count}</span>
     <div class="row" style="gap:4px;flex:none;align-items:center;">
+      <label class="deck-stepper-check deck-row-stepper" onclick="event.stopPropagation()"><input type="checkbox" data-select-id="${card.id}" ${sel.has(card.id)?"checked":""}></label>
       <button class="btn small deck-row-stepper" data-sub-id="${card.id}" style="padding:2px 8px;" onclick="event.stopPropagation()">−</button>
-      <span class="tabular" style="width:20px;text-align:center;">×${count}</span>
       <button class="btn small deck-row-stepper" data-add2-id="${card.id}" style="padding:2px 8px;" onclick="event.stopPropagation()">+</button>
       <button class="btn small ghost deck-row-stepper" data-move-id="${card.id}" title="${zone==='side'?'Move to Main Deck':'Move to Sideboard'}" onclick="event.stopPropagation()" style="padding:2px 6px;">${zone==='side'?'→ Main':'→ Side'}</button>
+    </div>
+  </div>`;
+}
+
+/* Compact (2-column) view: a small art thumbnail + name/cost, always
+   visible, with the same checkbox+steppers+move cluster as an overlay
+   that fades in on hover (bottom-right corner of the tile) — a denser
+   middle ground between the text-only List view and the full-art Image
+   view. */
+function compactRowHtml(card, count, zone, sel){
+  const [c1,c2] = cardMainDomainColorPair(card);
+  const thumb = `<div class="compact-thumb" style="--c1:${c1};--c2:${c2}">${card.img?`<img src="${card.img}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:""}</div>`;
+  return `
+  <div class="compact-item" data-decklist-card-id="${card.id}" data-open-id="${card.id}">
+    ${thumb}
+    <div class="compact-main">
+      <span class="compact-name">${escapeHtml(card.name)}</span>
+      <span class="compact-cost">Cost ${card.energy??"–"}</span>
+    </div>
+    <span class="compact-qty">×${count}</span>
+    <div class="row deck-stepper-row" style="gap:3px;align-items:center;">
+      <label class="deck-stepper-check" onclick="event.stopPropagation()"><input type="checkbox" data-select-id="${card.id}" ${sel.has(card.id)?"checked":""}></label>
+      <button class="btn small" data-sub-id="${card.id}" style="padding:1px 6px;" onclick="event.stopPropagation()">−</button>
+      <button class="btn small" data-add2-id="${card.id}" style="padding:1px 6px;" onclick="event.stopPropagation()">+</button>
+      <button class="btn small ghost" data-move-id="${card.id}" title="${zone==='side'?'Move to Main Deck':'Move to Sideboard'}" onclick="event.stopPropagation()" style="padding:1px 5px;">${zone==='side'?'→ Main':'→ Side'}</button>
     </div>
   </div>`;
 }
@@ -2690,7 +2784,12 @@ function wireMultiChartHover(container, seriesList, opts){
 const DRAW_CHART_COLORS = ["var(--focus)","var(--dom-fury)","var(--dom-body)","var(--dom-chaos)","var(--dom-mind)","var(--accent)","var(--crit)","var(--good)","var(--dom-order)","var(--dom-calm)"];
 
 /* ===================== VIEW: STATS ===================== */
-const statsState = { catMode:"mechanic", mechKeys:new Set(["removal"]), cardIds:new Set(), onPlay:true, atLeastK:1 };
+const statsState = {
+  catMode:"mechanic", mechKeys:new Set(["removal"]), cardIds:new Set(), onPlay:true, atLeastK:1,
+  libSize:null,       // null = auto-track the deck's actual main-deck count; a number once the user overrides it
+  abstractTrash:0,    // untracked "some cards already left the library" count — shrinks the population only
+  cardTrash:{},        // {cardId: copiesAlreadyInTrash} — shrinks both the population and this card's own successes
+};
 /* Only offer mechanics actually present in the active deck, so the chip row
    stays short and relevant instead of listing all ~25 tags in the catalogue. */
 function mechanicOptionsForDeck(items){
@@ -2699,11 +2798,47 @@ function mechanicOptionsForDeck(items){
   return Object.entries(MECH_META).filter(([k])=>counts[k]).sort((a,b)=>counts[b[0]]-counts[a[0]]).map(([k,v])=>[k,v,counts[k]]);
 }
 
+/* ---- library-size / trash "what if" simulation state (draw-chance calc) ---- */
+function statsLibSize(deck){
+  if(statsState.libSize==null) statsState.libSize = deckMainCount(deck);
+  return statsState.libSize;
+}
+function statsTrashedTotal(){ return Object.values(statsState.cardTrash).reduce((a,b)=>a+b,0); }
+function statsEffectiveLibSize(deck){
+  return Math.max(0, statsLibSize(deck) - (statsState.abstractTrash||0) - statsTrashedTotal());
+}
+/* Drop stale per-card trash entries (card no longer in the deck) and clamp
+   the rest to the card's current count, so switching decks or editing the
+   decklist elsewhere can't leave the simulation referencing phantom cards. */
+function statsPruneTrash(items){
+  const counts = {}; for(const x of items) counts[x.card.id]=x.count;
+  for(const id of Object.keys(statsState.cardTrash)){
+    if(!counts[id]){ delete statsState.cardTrash[id]; continue; }
+    if(statsState.cardTrash[id] > counts[id]) statsState.cardTrash[id] = counts[id];
+    if(statsState.cardTrash[id] <= 0) delete statsState.cardTrash[id];
+  }
+}
+/* Union of deck items matching the calculator's current category
+   selection — the card list shown next to the chart. */
+function statsSelectionItems(items){
+  if(statsState.catMode==="mechanic"){
+    if(!statsState.mechKeys.size) return [];
+    return items.filter(x=>(x.card.mech||[]).some(m=>statsState.mechKeys.has(m)));
+  }
+  return items.filter(x=>statsState.cardIds.has(x.card.id));
+}
+function resetStatsSimulation(){
+  statsState.libSize = null;
+  statsState.abstractTrash = 0;
+  statsState.cardTrash = {};
+}
+
 function renderStatsView(){
   const root = byId("view-stats");
   const deck = activeDeck();
   const legend = deckLegend(deck);
   const items = deckMainCards(deck);
+  statsPruneTrash(items);
   const mainCount = deckMainCount(deck) || 1;
   const power = deckPowerBreakdown(deck);
   const curve = energyCurve(items);
@@ -2756,7 +2891,7 @@ function renderStatsView(){
 
     <hr class="hair">
     <h3>Draw chance calculator</h3>
-    <p class="hint">Probability of having drawn at least K cards of a given category by a given turn, computed hypergeometrically from your actual deck (mulligan not accounted for). Check multiple mechanics (or cards) to compare them as separate lines on the same chart.</p>
+    <p class="hint">Probability of having drawn at least K cards of a given category by a given turn, computed hypergeometrically from your actual deck (mulligan not accounted for). Check multiple mechanics (or cards) to compare them as separate lines on the same chart. Use the trash/library controls below to simulate mid-game states — copies already drawn, discarded, or milled.</p>
     <div class="card-surface pad">
       <div class="row wrap" style="gap:10px;margin-bottom:10px;align-items:flex-start;">
         <select id="statCatMode">
@@ -2770,7 +2905,29 @@ function renderStatsView(){
         <label class="row" style="gap:6px;"><input type="checkbox" id="statOnPlay" ${statsState.onPlay?"checked":""}> On the play (goes first)</label>
         <label class="row" style="gap:6px;">At least <input type="number" id="statK" min="1" max="9" value="${statsState.atLeastK}" style="width:56px;"> copies</label>
       </div>
-      <div id="drawChanceChart"></div>
+      <div class="row wrap" style="gap:16px;margin-bottom:12px;align-items:center;padding:8px 10px;background:var(--surface-2);border-radius:8px;">
+        <div class="libctl">
+          <span class="hint" style="margin-right:2px;">Library size</span>
+          <button id="statLibSub" title="−1">−</button>
+          <input type="number" id="statLibSize" min="0" value="${statsLibSize(deck)}">
+          <button id="statLibAdd" title="+1">+</button>
+        </div>
+        <div class="libctl">
+          <span class="hint" style="margin-right:2px;">Untracked cards already gone</span>
+          <button id="statAbsSub" title="−1">−</button>
+          <input type="number" id="statAbstractTrash" min="0" value="${statsState.abstractTrash}">
+          <button id="statAbsAdd" title="+1">+</button>
+        </div>
+        <span class="hint">Effective library: <strong class="tabular" id="statEffLib">${statsEffectiveLibSize(deck)}</strong> cards</span>
+        <button class="btn ghost small" id="statResetSim">Reset simulation</button>
+      </div>
+      <div class="row wrap" style="gap:16px;align-items:flex-start;">
+        <div id="drawChanceChart" style="flex:1.4;min-width:280px;"></div>
+        <div style="flex:1;min-width:260px;">
+          <div class="hint" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.64rem;margin-bottom:4px;">Cards in selection — mark copies already in the trash</div>
+          <div class="statcard-list" id="statCardList"></div>
+        </div>
+      </div>
     </div>
 
     <hr class="hair">
@@ -2780,8 +2937,9 @@ function renderStatsView(){
   `;
   wireStatsControls();
   renderDrawChanceChart();
+  renderStatCardList();
   renderImpactChart();
-  byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); renderStatsView(); });
+  byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); resetStatsSimulation(); renderStatsView(); });
   const nb=byId("btnNewDeck"); if(nb) nb.addEventListener("click", ()=>{ const d=blankDeck("New deck "+(STORE.decks.length+1)); STORE.decks.push(d); STORE.activeId=d.id; saveStore(); renderStatsView(); });
   const rb=byId("btnRenameDeck"); if(rb) rb.addEventListener("click", ()=>{ const name=prompt("New name:",deck.name); if(name){deck.name=name;saveStore();renderStatsView();} });
   const db=byId("btnDeleteDeck"); if(db) db.addEventListener("click", ()=>{ if(STORE.decks.length<=1){alert("At least one deck is required.");return;} if(!confirm("Delete?"))return; STORE.decks=STORE.decks.filter(d=>d.id!==deck.id); STORE.activeId=STORE.decks[0].id; saveStore(); renderStatsView(); });
@@ -2795,14 +2953,91 @@ function wireStatsControls(){
     if(statsState.mechKeys.has(k)) statsState.mechKeys.delete(k); else statsState.mechKeys.add(k);
     chip.classList.toggle("on", statsState.mechKeys.has(k));
     renderDrawChanceChart();
+    renderStatCardList();
   }));
   const ck = byId("statCardKey");
   if(ck) ck.addEventListener("change", e=>{
     statsState.cardIds = new Set([...e.target.selectedOptions].map(o=>o.value));
     renderDrawChanceChart();
+    renderStatCardList();
   });
   byId("statOnPlay").addEventListener("change", e=>{ statsState.onPlay=e.target.checked; renderDrawChanceChart(); });
   byId("statK").addEventListener("input", debounce(e=>{ statsState.atLeastK=Math.max(1,parseInt(e.target.value)||1); renderDrawChanceChart(); },200));
+
+  const deck = activeDeck();
+  const libInput = byId("statLibSize");
+  libInput.addEventListener("input", debounce(e=>{ statsState.libSize=Math.max(0,parseInt(e.target.value,10)||0); refreshDrawCalc(); },200));
+  byId("statLibSub").addEventListener("click", ()=>{ statsState.libSize=Math.max(0,statsLibSize(deck)-1); libInput.value=statsState.libSize; refreshDrawCalc(); });
+  byId("statLibAdd").addEventListener("click", ()=>{ statsState.libSize=statsLibSize(deck)+1; libInput.value=statsState.libSize; refreshDrawCalc(); });
+  const absInput = byId("statAbstractTrash");
+  absInput.addEventListener("input", debounce(e=>{ statsState.abstractTrash=Math.max(0,parseInt(e.target.value,10)||0); refreshDrawCalc(); },200));
+  byId("statAbsSub").addEventListener("click", ()=>{ statsState.abstractTrash=Math.max(0,(statsState.abstractTrash||0)-1); absInput.value=statsState.abstractTrash; refreshDrawCalc(); });
+  byId("statAbsAdd").addEventListener("click", ()=>{ statsState.abstractTrash=(statsState.abstractTrash||0)+1; absInput.value=statsState.abstractTrash; refreshDrawCalc(); });
+  byId("statResetSim").addEventListener("click", ()=>{ resetStatsSimulation(); renderStatsView(); });
+}
+
+/* Refreshes just the parts of the draw-chance calculator that depend on the
+   library-size/trash simulation, without rebuilding the whole Stats view —
+   keeps focus in the number inputs while the user is typing. */
+function refreshDrawCalc(){
+  const deck = activeDeck();
+  const effEl = byId("statEffLib");
+  if(effEl) effEl.textContent = statsEffectiveLibSize(deck);
+  renderDrawChanceChart();
+  renderStatCardList();
+}
+
+/* Card list next to the chart: every deck card matching the current
+   category selection, with a per-card "copies already in the trash"
+   stepper. Hovering a row uses the existing global card hover-preview
+   (data-decklist-card-id, see part11_boot.js) to show a large card image;
+   double-clicking opens the same card detail modal the deck lists use. */
+function renderStatCardList(){
+  const box = byId("statCardList");
+  if(!box) return;
+  const deck = activeDeck();
+  const items = deckMainCards(deck);
+  const sel = statsSelectionItems(items).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+  if(!sel.length){
+    box.innerHTML = `<p class="hint">${statsState.catMode==='mechanic'?'Check at least one mechanic above':'Select at least one card above'} to list its cards here.</p>`;
+    return;
+  }
+  box.innerHTML = sel.map(x=>{
+    const [c1,c2] = cardMainDomainColorPair(x.card);
+    const trash = statsState.cardTrash[x.card.id]||0;
+    const thumb = `<div class="statcard-thumb" style="--c1:${c1};--c2:${c2}">${x.card.img?`<img src="${x.card.img}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:""}</div>`;
+    return `
+    <div class="statcard-row" data-decklist-card-id="${x.card.id}" data-stat-open-id="${x.card.id}">
+      ${thumb}
+      <span class="statcard-name">${escapeHtml(x.card.name)}</span>
+      <span class="statcard-qty">×${x.count}</span>
+      <div class="statcard-trash" title="Copies of this card already in the trash">
+        <button data-trash-sub="${x.card.id}">−</button>
+        <span class="n">${trash}</span>
+        <button data-trash-add="${x.card.id}">+</button>
+      </div>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-trash-sub]").forEach(b=>b.addEventListener("click", e=>{
+    e.stopPropagation();
+    const id = b.getAttribute("data-trash-sub");
+    statsState.cardTrash[id] = Math.max(0,(statsState.cardTrash[id]||0)-1);
+    if(!statsState.cardTrash[id]) delete statsState.cardTrash[id];
+    const effEl = byId("statEffLib"); if(effEl) effEl.textContent = statsEffectiveLibSize(deck);
+    renderDrawChanceChart();
+    renderStatCardList();
+  }));
+  box.querySelectorAll("[data-trash-add]").forEach(b=>b.addEventListener("click", e=>{
+    e.stopPropagation();
+    const id = b.getAttribute("data-trash-add");
+    const it = items.find(x=>x.card.id===id);
+    const max = it?it.count:0;
+    statsState.cardTrash[id] = Math.min(max,(statsState.cardTrash[id]||0)+1);
+    const effEl = byId("statEffLib"); if(effEl) effEl.textContent = statsEffectiveLibSize(deck);
+    renderDrawChanceChart();
+    renderStatCardList();
+  }));
+  box.querySelectorAll("[data-stat-open-id]").forEach(row=>row.addEventListener("dblclick", ()=>openCardModal(row.getAttribute("data-stat-open-id"))));
 }
 
 function renderDrawChanceChart(){
@@ -2830,10 +3065,11 @@ function renderDrawChanceChart(){
     return;
   }
 
+  const effLib = statsEffectiveLibSize(deck);
   const seriesList = seriesDefs.map((s,i)=>({
     label: s.label,
     color: DRAW_CHART_COLORS[i % DRAW_CHART_COLORS.length],
-    data: categoryDrawSeries(deck, s.ids, 10, statsState.onPlay, statsState.atLeastK).map(d=>({x:d.turn,y:d.p*100})),
+    data: categoryDrawSeriesAdjusted(deck, s.ids, 10, statsState.onPlay, statsState.atLeastK, effLib, statsState.cardTrash).map(d=>({x:d.turn,y:d.p*100})),
   }));
 
   if(seriesList.length===1){
