@@ -159,6 +159,14 @@ button{ font-family:inherit; }
 .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
 .navbtn.active{ background:var(--accent-soft); color:var(--accent-ink); }
 .navbtn .n{ margin-left:auto; font-family:var(--font-mono); font-size:.72rem; color:var(--ink-muted); }
+.navbtn .navicon{ width:20px; height:20px; flex:none; }
+.navbtn .navlabel{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#sidebarCollapseBtn{ color:var(--ink-muted); margin-bottom:6px; }
+#sidebarCollapseBtn .navicon{ transition:transform .15s ease; }
+.app.sidebar-collapsed{ grid-template-columns: 60px 1fr; }
+.app.sidebar-collapsed .navbtn{ justify-content:center; padding:8px; }
+.app.sidebar-collapsed .navbtn .navlabel{ display:none; }
+.app.sidebar-collapsed #sidebarCollapseBtn .navicon{ transform:rotate(180deg); }
 .main{ overflow-y:auto; padding:22px 26px 60px; }
 .view{ display:none; max-width:1320px; margin:0 auto; }
 .view.active{ display:block; }
@@ -309,9 +317,15 @@ table tr:hover td{ background:var(--surface-2); }
 
 .card-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
 .deck-list-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:10px; }
-.decklist-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-radius:8px; }
+.decklist-row{ display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; cursor:pointer; }
 .decklist-row:hover{ background:var(--surface-2); }
 .decklist-row + .decklist-row{ margin-top:2px; }
+/* steppers fade in on hover; the qty count next to them stays put and
+   always visible (it's a sibling span, not part of the faded group) */
+.decklist-row .deck-row-stepper{ opacity:0; pointer-events:none; transition:opacity .12s ease; }
+.decklist-row:hover .deck-row-stepper{ opacity:1; pointer-events:auto; }
+.deck-image-item .deck-stepper-row{ opacity:0; pointer-events:none; transition:opacity .12s ease; }
+.deck-image-item:hover .deck-stepper-row{ opacity:1; pointer-events:auto; }
 
 /* ---------- tabs ---------- */
 .subtabs{ display:flex; gap:4px; border-bottom:1px solid var(--hair); margin-bottom:16px; }
@@ -338,6 +352,9 @@ table tr:hover td{ background:var(--surface-2); }
 
 /* ---------- curve bars ---------- */
 .curve{ display:flex; align-items:flex-end; gap:6px; height:120px; padding-top:8px; }
+.curve.compact{ height:66px; gap:3px; }
+.curve.compact .n{ font-size:.6rem; }
+.curve.compact .x{ font-size:.58rem; }
 .curve .colwrap{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end; }
 .curve .bar{ width:100%; border-radius:4px 4px 2px 2px; background:var(--accent); position:relative; min-height:2px; }
 .curve .n{ font-family:var(--font-mono); font-size:.68rem; color:var(--ink-2); }
@@ -463,10 +480,22 @@ const KEYWORD_GLOSSARY = {
    Each signal pairs an "enabler" detector with a "payoff" detector; a card
    can match either, both, or neither. Two cards that satisfy enabler+payoff
    of the same signal get a strong synergy edge tagged with that signal. */
+/* Each signal pairs a genuine "does something" enabler with a genuine
+   "cares about that" payoff. These were empirically tightened against the
+   real card pool (a standalone enabler/payoff-count script) after several
+   signals turned out to match thousands of pairs off broad mechanic tags
+   or common English words ("hold", "trash") rather than an actual
+   build-around relationship — see project notes. `empower_engine` was
+   removed outright: Empower/Empowered is a single card paying its own
+   one-time cost, not a cross-card combo at all. Several payoffs now
+   re-check the card's own text with its keyword's own bracket tag
+   stripped out first, so a card doesn't count as its own payoff merely
+   for carrying the keyword (e.g. every 5+ Might unit is auto-tagged
+   [Mighty] — that shouldn't alone make it a buff-stacking payoff). */
 const COMBO_SIGNALS = [
   { key:"trash_engine", label:"Trash engine",
-    enabler: r => r.mech.includes("discard") || r.mech.includes("trash_matters"),
-    payoff:  r => r.kw.includes("Legion") || r.kw.includes("Deathknell") || r.mech.includes("recycle") },
+    enabler: r => r.mech.includes("discard"),
+    payoff:  r => r.kw.includes("Legion") || r.kw.includes("Deathknell") || r.mech.includes("recursion") },
   { key:"stun_lock", label:"Stun lock",
     enabler: r => r.kw.includes("Stun") || r.mech.includes("stun"),
     payoff:  r => r.mech.includes("stunned_payoff") },
@@ -474,32 +503,29 @@ const COMBO_SIGNALS = [
     enabler: r => r.mech.includes("xp_level") && /gain\s+\d+\s+xp/i.test(r.text),
     payoff:  r => r.kw.includes("Level") || /level\s+\d+/i.test(r.text) },
   { key:"excess_damage", label:"Excess damage",
-    enabler: r => r.mech.includes("removal") || (r.might && r.might>=5),
+    enabler: r => r.mech.includes("removal") || (r.might!=null && r.might>=7),
     payoff:  r => r.mech.includes("excess_damage") },
   { key:"conquer_move", label:"Conquer + move",
-    enabler: r => r.mech.includes("move"),
-    payoff:  r => r.mech.includes("conquer_hold") },
-  { key:"hidden_matters", label:"Hidden synergy",
+    enabler: r => r.mech.includes("move") && /battlefield/i.test(r.text),
+    payoff:  r => /\bconquer/i.test(r.text) },
+  { key:"hidden_matters", label:"Hidden card synergy",
     enabler: r => r.kw.includes("Hidden"),
-    payoff:  r => r.kw.includes("Hidden") || r.kw.includes("Vision") },
+    payoff:  r => /\bhidden\b/i.test(r.text.replace(/\[Hidden\]/gi,"")) },
   { key:"gear_matters", label:"Gear synergy",
     enabler: r => r.type==="Gear" || r.kw.includes("Equip"),
     payoff:  r => r.kw.includes("Weaponmaster") || r.mech.includes("equip_gear") },
   { key:"token_swarm", label:"Token swarm",
     enabler: r => r.mech.includes("token"),
     payoff:  r => /for each (friendly |your )?unit/i.test(r.text) || /each unit you control/i.test(r.text) },
-  { key:"empower_engine", label:"Empower engine",
-    enabler: r => r.kw.includes("Empower"),
-    payoff:  r => r.kw.includes("Empowered") },
   { key:"cost_ramp", label:"Cost discount",
     enabler: r => r.mech.includes("cost_reduction"),
-    payoff:  r => r.energy!=null && r.energy>=6 },
+    payoff:  r => r.energy!=null && r.energy>=8 },
   { key:"buff_stack", label:"Buff stacking",
     enabler: r => r.mech.includes("buff") || r.kw.includes("Buff"),
-    payoff:  r => r.kw.includes("Mighty") },
+    payoff:  r => /\bmighty\b/i.test(r.text.replace(/\[Mighty\]/gi,"")) },
   { key:"score_race", label:"Score race",
     enabler: r => r.mech.includes("score_payoff"),
-    payoff:  r => r.mech.includes("conquer_hold") },
+    payoff:  r => /\bconquer\b/i.test(r.text) },
 ];
 
 const RARITY_ORDER = ["Common","Uncommon","Rare","Epic","Showcase","Promo"];
@@ -703,7 +729,14 @@ function copyLimit(card){
 const LS_KEY = "riftbound_deckbuilder_v1";
 function blankDeck(name){
   return { id:uniqueId(), name:name||"Unnamed deck", legendId:null,
-           main:{}, runes:{}, battlefields:[], updatedAt:Date.now?Date.now():0 };
+           main:{}, side:{}, runes:{}, battlefields:[], updatedAt:Date.now?Date.now():0 };
+}
+/* Fills in fields added to the deck shape after some decks were already
+   saved (e.g. `side` for the sideboard) so old localStorage/cloud saves
+   don't crash the app — called on every deck coming from storage. */
+function ensureDeckShape(deck){
+  if(!deck.side) deck.side = {};
+  return deck;
 }
 function loadStore(){
   try{
@@ -711,6 +744,7 @@ function loadStore(){
     if(!raw) return { decks:[blankDeck("My Deck")], activeId:null };
     const parsed = JSON.parse(raw);
     if(!parsed.decks || !parsed.decks.length) parsed.decks=[blankDeck("My Deck")];
+    parsed.decks.forEach(ensureDeckShape);
     if(!parsed.activeId) parsed.activeId = parsed.decks[0].id;
     return parsed;
   }catch(e){ return { decks:[blankDeck("My Deck")], activeId:null }; }
@@ -726,20 +760,103 @@ function touchDeck(){ activeDeck().updatedAt = Date.now?Date.now():0; saveStore(
 
 function deckMainCount(deck){ return Object.values(deck.main).reduce((a,b)=>a+b,0); }
 function deckRuneCount(deck){ return Object.values(deck.runes).reduce((a,b)=>a+b,0); }
+function deckSideCount(deck){ return Object.values(deck.side||{}).reduce((a,b)=>a+b,0); }
 function deckMainCards(deck){
   return Object.entries(deck.main).map(([id,count])=>({card:CARD_BY_ID.get(id), count})).filter(x=>x.card);
 }
 function deckRuneCards(deck){
   return Object.entries(deck.runes).map(([id,count])=>({card:CARD_BY_ID.get(id), count})).filter(x=>x.card);
 }
+function deckSideCards(deck){
+  return Object.entries(deck.side||{}).map(([id,count])=>({card:CARD_BY_ID.get(id), count})).filter(x=>x.card);
+}
+
+/* Plain-text export, in the same "<qty> <name>" notation the import parser
+   (above) reads back in — round-trips through Import with no data loss. */
+function deckToExportText(deck){
+  const legend = deckLegend(deck);
+  const mainItems = deckMainCards(deck).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+  const sideItems = deckSideCards(deck).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+  const runeItems = deckRuneCards(deck).sort((a,b)=>a.card.name.localeCompare(b.card.name));
+  const bfCards = (deck.battlefields||[]).map(id=>CARD_BY_ID.get(id)).filter(Boolean);
+  const lines = [];
+  lines.push(`// ${deck.name}`);
+  lines.push("");
+  lines.push("Legend");
+  lines.push(legend ? `1 ${legend.name}` : "// (none selected)");
+  lines.push("");
+  lines.push(`Main Deck (${deckMainCount(deck)})`);
+  if(mainItems.length) for(const x of mainItems) lines.push(`${x.count} ${x.card.name}`);
+  else lines.push("// (empty)");
+  lines.push("");
+  lines.push(`Sideboard (${deckSideCount(deck)})`);
+  if(sideItems.length) for(const x of sideItems) lines.push(`${x.count} ${x.card.name}`);
+  else lines.push("// (empty)");
+  lines.push("");
+  lines.push(`Runes (${deckRuneCount(deck)})`);
+  if(runeItems.length) for(const x of runeItems) lines.push(`${x.count} ${x.card.name}`);
+  else lines.push("// (empty)");
+  lines.push("");
+  lines.push("Battlefields");
+  if(bfCards.length) for(const c of bfCards) lines.push(`1 ${c.name}`);
+  else lines.push("// (empty)");
+  return lines.join("\n")+"\n";
+}
+function downloadDecklistText(deck){
+  const text = deckToExportText(deck);
+  const blob = new Blob([text], {type:"text/plain"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(deck.name||"decklist").trim().replace(/[^\w\-]+/g,"_")||"decklist"}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
 function deckLegend(deck){ return deck.legendId ? CARD_BY_ID.get(deck.legendId) : null; }
 
+/* Main deck and sideboard share one copy limit per card (e.g. max 3 total
+   between the two, like sideboarding in most trading card games) — the cap
+   here is copyLimit(card) minus whatever's already sitting in the other
+   zone, not a flat per-zone limit. */
 function addToMain(deck, cardId, delta){
   const card = CARD_BY_ID.get(cardId); if(!card) return;
+  if(!deck.side) deck.side = {};
   const cur = deck.main[cardId]||0;
-  const next = clamp(cur+delta, 0, copyLimit(card));
+  const inOtherZone = deck.side[cardId]||0;
+  const max = Math.max(0, copyLimit(card)-inOtherZone);
+  const next = clamp(cur+delta, 0, max);
   if(next===0) delete deck.main[cardId]; else deck.main[cardId]=next;
   touchDeck();
+}
+function addToSide(deck, cardId, delta){
+  const card = CARD_BY_ID.get(cardId); if(!card) return;
+  if(!deck.side) deck.side = {};
+  const cur = deck.side[cardId]||0;
+  const inOtherZone = deck.main[cardId]||0;
+  const max = Math.max(0, copyLimit(card)-inOtherZone);
+  const next = clamp(cur+delta, 0, max);
+  if(next===0) delete deck.side[cardId]; else deck.side[cardId]=next;
+  touchDeck();
+}
+/* Relocate copies between Main Deck and Sideboard (decrementing the source
+   zone before incrementing the destination avoids a false copy-limit
+   rejection, since the total held across both zones never actually
+   changes). */
+function moveMainToSide(deck, cardId, qty){
+  qty = qty==null?1:qty;
+  const n = Math.min(qty, deck.main[cardId]||0);
+  if(n<=0) return;
+  addToMain(deck, cardId, -n);
+  addToSide(deck, cardId, n);
+}
+function moveSideToMain(deck, cardId, qty){
+  qty = qty==null?1:qty;
+  const n = Math.min(qty, (deck.side&&deck.side[cardId])||0);
+  if(n<=0) return;
+  addToSide(deck, cardId, -n);
+  addToMain(deck, cardId, n);
 }
 function addToRunes(deck, cardId, delta){
   const card = CARD_BY_ID.get(cardId); if(!card) return;
@@ -761,6 +878,9 @@ function setLegend(deck, legendId){
   const legend = CARD_BY_ID.get(legendId);
   for(const id of Object.keys(deck.main)){
     if(!cardLegalForLegend(CARD_BY_ID.get(id), legend)) delete deck.main[id];
+  }
+  for(const id of Object.keys(deck.side||{})){
+    if(!cardLegalForLegend(CARD_BY_ID.get(id), legend)) delete deck.side[id];
   }
   for(const id of Object.keys(deck.runes)){
     const c = CARD_BY_ID.get(id);
@@ -869,6 +989,7 @@ async function handleSignedIn(user){
   try{ localStorage.setItem(LOCAL_BACKUP_KEY, JSON.stringify(STORE)); }catch(e){ /* ignore */ }
   const cloudDecks = await pullDecksFromCloud();
   if(cloudDecks && cloudDecks.length){
+    cloudDecks.forEach(ensureDeckShape);
     STORE = { decks: cloudDecks, activeId: cloudDecks[0].id };
     _lastCloudDeckIds = new Set(cloudDecks.map(d=>d.id));
   } else {
@@ -893,6 +1014,7 @@ function handleSignedOut(){
     STORE = raw ? JSON.parse(raw) : loadStore();
   }catch(e){ STORE = loadStore(); }
   if(!STORE.decks || !STORE.decks.length) STORE = { decks:[blankDeck("My Deck")], activeId:null };
+  STORE.decks.forEach(ensureDeckShape);
   if(!STORE.activeId || !STORE.decks.find(d=>d.id===STORE.activeId)) STORE.activeId = STORE.decks[0].id;
   saveStore();
   renderAccountPill();
@@ -910,7 +1032,7 @@ async function pullDecksFromCloud(){
   if(error){ console.error("[cloud] pull failed", error); return null; }
   return (data||[]).map(r=>({
     id:r.id, name:r.name, legendId:r.legend_id||null,
-    main:r.main||{}, runes:r.runes||{}, battlefields:r.battlefields||[],
+    main:r.main||{}, side:r.side||{}, runes:r.runes||{}, battlefields:r.battlefields||[],
     updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : 0,
   }));
 }
@@ -919,11 +1041,22 @@ async function syncDecksToCloud(){
   const ids = new Set(STORE.decks.map(d=>d.id));
   const rows = STORE.decks.map(d=>({
     id:d.id, user_id:currentUser.id, name:d.name, legend_id:d.legendId||null,
-    main:d.main||{}, runes:d.runes||{}, battlefields:d.battlefields||[],
+    main:d.main||{}, side:d.side||{}, runes:d.runes||{}, battlefields:d.battlefields||[],
     updated_at:new Date().toISOString(),
   }));
   if(rows.length){
-    const { error } = await supabaseClient.from("decks").upsert(rows);
+    let { error } = await supabaseClient.from("decks").upsert(rows);
+    if(error && /\bside\b/.test(error.message||"")){
+      // "side" (sideboard) is a newer column — a player who set up their
+      // Supabase table before this feature shipped won't have it yet. Fall
+      // back to syncing without it rather than breaking cloud sync outright;
+      // sideboards just won't persist to the cloud until they run the
+      // migration in SUPABASE_SETUP.md.
+      const fallbackRows = rows.map(({side, ...rest})=>rest);
+      const retry = await supabaseClient.from("decks").upsert(fallbackRows);
+      error = retry.error;
+      if(!error) console.warn("[cloud] synced without sideboard data — see SUPABASE_SETUP.md to enable it.");
+    }
     if(error) console.error("[cloud] sync failed", error);
   }
   const removed = [..._lastCloudDeckIds].filter(id=>!ids.has(id));
@@ -1519,6 +1652,15 @@ function cardDomainChips(card){
   return (card.domain||[]).map(d=>domainChip(d)).join(" ");
 }
 
+/* No pricing data ships with the app (there's no market/price field in the
+   card dataset, and nothing here fabricates one) — instead this links out to
+   a free, no-API-key, third-party search that reliably returns live prices
+   for this game: TCGPlayer's own search UI, scoped to the Riftbound product
+   line. Verified live against real search results before wiring this up. */
+function tcgplayerSearchUrl(card){
+  return `https://www.tcgplayer.com/search/riftbound-league-of-legends-trading-card-game/product?q=${encodeURIComponent(card.name)}&view=grid&productLineName=riftbound-league-of-legends-trading-card-game&setName=product`;
+}
+
 function cardDetailHtml(card){
   const synergies = topSynergiesFor(card, POOL_MAIN.concat(LEGENDS), 10);
   const power = DECKBUILDABLE_TYPES.includes(card.type) ? cardPowerScore(card) : null;
@@ -1537,6 +1679,7 @@ function cardDetailHtml(card){
           <span class="badge" style="background:var(--surface-3);color:var(--ink-2)">${card.rarity}</span>
           ${cardDomainChips(card)}
           <span class="hint">${card.setLabel} #${card.num}</span>
+          <a class="btn ghost small" href="${tcgplayerSearchUrl(card)}" target="_blank" rel="noopener noreferrer" title="Check current market price on TCGPlayer (opens in a new tab)">💲 Check price →</a>
         </div>
         <p style="max-width:none;font-size:.9rem;">${renderCardText(card.text) || '<span class="hint">No rules text.</span>'}</p>
         ${card.flavor?`<p style="font-style:italic;font-size:.8rem;">${escapeHtml(card.flavor)}</p>`:""}
@@ -1633,32 +1776,43 @@ function hoverCardPreviewHtml(card, opts){
     ${synergyHtml}
   `;
 }
-function positionHoverCardPreview(e){
-  if(!_hoverCardEl) return;
+let _hoverCardAnchorEl = null;
+/* Positions beside the hovered element's own bounding box (not the raw
+   cursor) — deliberately outside it rather than on top of it, so the preview
+   never covers the very row/card the user is trying to read (e.g. a
+   decklist). Prefers the side with more room; falls back to the other side,
+   then to a clamped on-screen position as a last resort. */
+function positionHoverCardPreview(){
+  if(!_hoverCardEl || !_hoverCardAnchorEl || !_hoverCardAnchorEl.isConnected) return;
+  const r = _hoverCardAnchorEl.getBoundingClientRect();
   const w = _hoverCardEl.offsetWidth || 320;
-  let left = e.clientX + 20;
-  if(left + w > window.innerWidth - 8) left = e.clientX - w - 20;
-  left = clamp(left, 8, Math.max(8, window.innerWidth - w - 8));
   const h = _hoverCardEl.offsetHeight || 200;
-  let top = e.clientY + 16;
-  if(top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);
+  const gap = 14;
+  const roomRight = window.innerWidth - r.right;
+  const roomLeft = r.left;
+  let left;
+  if(roomRight >= w+gap) left = r.right + gap;
+  else if(roomLeft >= w+gap) left = r.left - w - gap;
+  else left = clamp(window.innerWidth - w - 8, 8, window.innerWidth - w - 8); // neither side fits — clamp on-screen as a last resort
+  let top = clamp(r.top, 8, Math.max(8, window.innerHeight - h - 8));
   _hoverCardEl.style.left = left+"px";
   _hoverCardEl.style.top = top+"px";
 }
-function showCardHoverPreviewNow(e, card, opts){
+function showCardHoverPreviewNow(anchorEl, card, opts){
+  if(!anchorEl.isConnected) return; // hovered element vanished during the show delay
   if(!_hoverCardEl){ _hoverCardEl = el("div","hover-card-preview"); document.body.appendChild(_hoverCardEl); }
+  _hoverCardAnchorEl = anchorEl;
   _hoverCardEl.innerHTML = hoverCardPreviewHtml(card, opts);
   _hoverCardEl.style.display = "block";
-  positionHoverCardPreview(e);
+  positionHoverCardPreview();
 }
-function showCardHoverPreview(e, card, opts){
+function showCardHoverPreview(anchorEl, card, opts){
   if(!card) return;
   const key = card.id + (opts&&opts.withinCards ? ":scoped" : "");
-  if(_hoverCardKey===key && _hoverCardEl && _hoverCardEl.style.display==="block"){ positionHoverCardPreview(e); return; }
+  if(_hoverCardKey===key && _hoverCardEl && _hoverCardEl.style.display==="block") return; // already showing this card, anchored — nothing to update
   _hoverCardKey = key;
   clearTimeout(_hoverCardTimer);
-  const cx=e.clientX, cy=e.clientY;
-  _hoverCardTimer = setTimeout(()=>{ showCardHoverPreviewNow({clientX:cx,clientY:cy}, card, opts); }, 130);
+  _hoverCardTimer = setTimeout(()=>{ showCardHoverPreviewNow(anchorEl, card, opts); }, 130);
 }
 function hideCardHoverPreview(){
   clearTimeout(_hoverCardTimer);
@@ -1780,8 +1934,9 @@ function renderDbResults(){
 const builderState = {
   tab:"legend", legendQ:"", poolQ:"", poolSort:"cost",
   poolTypes:new Set(["Unit","Spell","Gear"]), poolMech:"", poolKeyword:"", poolMinCost:"", poolMaxCost:"",
-  deckView:"image",          // "image" | "list"
+  deckView:"image",          // "image" | "list" — shared by the Main Deck and Sideboard panels
   deckSelected:new Set(),    // selected main-deck card ids, for bulk remove
+  sideSelected:new Set(),    // selected sideboard card ids, for bulk remove
   focusTags:new Set(),       // axis keys chosen as a deckbuilding "focus"
   importText:"", importPreview:null, importMergeIntoCurrent:false,
 };
@@ -1793,6 +1948,7 @@ function deckSelectorHtml(){
       <button class="btn small" id="btnNewDeck">+ New deck</button>
       <button class="btn small" id="btnRenameDeck">Rename</button>
       <button class="btn small danger" id="btnDeleteDeck">Delete</button>
+      <button class="btn ghost small" id="btnExportDeck" title="Download this decklist as a .txt file">⭳ Export .txt</button>
     </div>`;
 }
 
@@ -1808,6 +1964,7 @@ function renderBuilderView(){
         <div class="subtabs">
           <button class="subtab ${builderState.tab==='legend'?'active':''}" data-tab="legend">Legend</button>
           <button class="subtab ${builderState.tab==='main'?'active':''}" data-tab="main">Main Deck</button>
+          <button class="subtab ${builderState.tab==='sideboard'?'active':''}" data-tab="sideboard">Sideboard (${deckSideCount(deck)})</button>
           <button class="subtab ${builderState.tab==='runes'?'active':''}" data-tab="runes">Runes (${deckRuneCount(deck)}/12)</button>
           <button class="subtab ${builderState.tab==='battlefields'?'active':''}" data-tab="battlefields">Battlefields (${deck.battlefields.length}/3)</button>
           <button class="subtab ${builderState.tab==='import'?'active':''}" data-tab="import">Import</button>
@@ -1819,21 +1976,26 @@ function renderBuilderView(){
           <h3>Status</h3>
           ${legend?`<div class="row" style="margin-bottom:8px;">${miniCardHtml(legend,{small:true})}<div style="margin-left:8px;">${(legend.domain||[]).map(d=>domainChip(d)).join(" ")}</div></div>`:'<p class="hint">No Legend selected yet.</p>'}
           <div id="legalityBox"></div>
+          <div id="statusCurveBox" style="margin-top:8px;"></div>
           <hr class="hair">
           <div class="spread" style="align-items:center;">
             <h3 style="margin:0;">Your Main Deck (<span id="deckListCount">${deckMainCount(deck)}</span>)</h3>
             <button class="btn ghost small" id="deckViewToggle">${builderState.deckView==='image'?'List view':'Image view'}</button>
           </div>
           <div id="deckSelectionBar"></div>
-          <div id="deckListPanel" style="margin-top:8px;max-height:640px;overflow-y:auto;"></div>
+          <div id="deckListPanel" style="margin-top:8px;max-height:420px;overflow-y:auto;"></div>
+          <hr class="hair">
+          <h3 style="margin:0 0 6px;">Sideboard (<span id="sideListCount">${deckSideCount(deck)}</span>)</h3>
+          <div id="sideSelectionBar"></div>
+          <div id="sideListPanel" style="margin-top:8px;max-height:320px;overflow-y:auto;"></div>
         </div>
       </div>
     </div>
   `;
-  byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); builderState.deckSelected=new Set(); renderBuilderView(); });
+  byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); renderBuilderView(); });
   byId("btnNewDeck").addEventListener("click", ()=>{
     const d = blankDeck("New deck "+(STORE.decks.length+1));
-    STORE.decks.push(d); STORE.activeId=d.id; builderState.deckSelected=new Set(); saveStore(); renderBuilderView();
+    STORE.decks.push(d); STORE.activeId=d.id; builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); saveStore(); renderBuilderView();
   });
   byId("btnRenameDeck").addEventListener("click", ()=>{
     const name = prompt("New name for the deck:", deck.name);
@@ -1843,8 +2005,9 @@ function renderBuilderView(){
     if(STORE.decks.length<=1){ alert("You must have at least one deck."); return; }
     if(!confirm("Delete this deck permanently?")) return;
     STORE.decks = STORE.decks.filter(d=>d.id!==deck.id);
-    STORE.activeId = STORE.decks[0].id; builderState.deckSelected=new Set(); saveStore(); renderBuilderView();
+    STORE.activeId = STORE.decks[0].id; builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); saveStore(); renderBuilderView();
   });
+  byId("btnExportDeck").addEventListener("click", ()=>downloadDecklistText(deck));
   root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click", ()=>{
     builderState.tab=b.getAttribute("data-tab");
     root.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active", x===b));
@@ -1853,11 +2016,32 @@ function renderBuilderView(){
   byId("deckViewToggle").addEventListener("click", ()=>{
     builderState.deckView = builderState.deckView==="image"?"list":"image";
     byId("deckViewToggle").textContent = builderState.deckView==='image'?'List view':'Image view';
-    renderDeckListPanel();
+    renderZonePanel("main");
+    renderZonePanel("side");
   });
   renderLegality();
+  renderStatusCurve();
   renderBuilderTabBody();
-  renderDeckListPanel();
+  renderZonePanel("main");
+  renderZonePanel("side");
+}
+
+/* Compact energy-curve bars in the Status card, alongside the Legend and
+   legality summary — same underlying energyCurve() the Statistics view
+   uses, just squeezed down to sidebar width. */
+function renderStatusCurve(){
+  const box = byId("statusCurveBox");
+  if(!box) return;
+  const deck = activeDeck();
+  const items = deckMainCards(deck);
+  if(!items.length){ box.innerHTML = ""; return; }
+  const curve = energyCurve(items);
+  const maxV = Math.max(1, ...Object.values(curve));
+  box.innerHTML = `
+    <div class="hint" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.64rem;margin-bottom:2px;">Energy curve</div>
+    <div class="curve compact">${Object.entries(curve).map(([k,v])=>`
+      <div class="colwrap"><div class="n">${v||""}</div><div class="bar" style="height:${v?Math.max(3,(v/maxV)*54):2}px"></div><div class="x">${k}</div></div>`).join("")}
+    </div>`;
 }
 
 function renderLegality(){
@@ -1870,86 +2054,131 @@ function renderLegality(){
     </div>`).join("") : `<div class="row" style="gap:6px;"><span class="badge" style="background:var(--good);color:#fff;">OK</span><span style="font-size:.8rem;">The deck is ready to play!</span></div>`;
 }
 
-/* ---- sidebar deck list: image or list view, multi-select checkboxes + bulk remove ---- */
-function renderDeckListPanel(){
+/* ---- sidebar deck lists: Main Deck and Sideboard, each image or list view,
+   multi-select checkboxes + bulk remove, and a move-to-other-zone button.
+   Both panels share the same rendering code, parameterized by `zone`
+   ("main" | "side"), since they're otherwise identical. ---- */
+function zoneItems(deck, zone){
+  const items = zone==="side" ? deckSideCards(deck) : deckMainCards(deck);
+  return items.sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+}
+function zoneSelectedSet(zone){ return zone==="side" ? builderState.sideSelected : builderState.deckSelected; }
+function zonePanelBoxId(zone){ return zone==="side" ? "sideListPanel" : "deckListPanel"; }
+function zoneCountElId(zone){ return zone==="side" ? "sideListCount" : "deckListCount"; }
+
+function renderZonePanel(zone){
   const deck = activeDeck();
-  const items = deckMainCards(deck).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+  const items = zoneItems(deck, zone);
   const validIds = new Set(items.map(x=>x.card.id));
-  for(const id of [...builderState.deckSelected]) if(!validIds.has(id)) builderState.deckSelected.delete(id);
-  const countEl = byId("deckListCount"); if(countEl) countEl.textContent = deckMainCount(deck);
-  renderDeckSelectionBar();
-  const box = byId("deckListPanel");
+  const sel = zoneSelectedSet(zone);
+  for(const id of [...sel]) if(!validIds.has(id)) sel.delete(id);
+  const countEl = byId(zoneCountElId(zone)); if(countEl) countEl.textContent = items.reduce((a,x)=>a+x.count,0);
+  renderZoneSelectionBar(zone);
+  const box = byId(zonePanelBoxId(zone));
   if(!box) return;
-  if(!items.length){ box.innerHTML = '<p class="hint">No cards added yet — browse the Main Deck tab, or Import a decklist.</p>'; return; }
+  if(!items.length){
+    box.innerHTML = zone==="side"
+      ? '<p class="hint">Sideboard is empty — add cards from the Sideboard tab, or move copies over from your Main Deck.</p>'
+      : '<p class="hint">No cards added yet — browse the Main Deck tab, or Import a decklist.</p>';
+    return;
+  }
   if(builderState.deckView==="image"){
     box.innerHTML = `<div class="deck-list-grid">${items.map(x=>`
-      <div style="position:relative;">
-        ${miniCardHtml(x.card,{small:true,qty:x.count,checkbox:true,checked:builderState.deckSelected.has(x.card.id)})}
-        <div class="row" style="justify-content:center;gap:4px;margin-top:2px;">
+      <div class="deck-image-item" style="position:relative;">
+        ${miniCardHtml(x.card,{small:true,qty:x.count,checkbox:true,checked:sel.has(x.card.id)})}
+        <div class="row deck-stepper-row" style="justify-content:center;gap:4px;margin-top:2px;flex-wrap:wrap;">
           <button class="btn small" data-sub-id="${x.card.id}" style="padding:2px 8px;">−</button>
           <button class="btn small" data-add2-id="${x.card.id}" style="padding:2px 8px;">+</button>
+          <button class="btn small ghost" data-move-id="${x.card.id}" title="${zone==='side'?'Move to Main Deck':'Move to Sideboard'}" style="padding:2px 6px;">${zone==='side'?'→ Main':'→ Side'}</button>
         </div>
       </div>`).join("")}</div>`;
   } else {
-    box.innerHTML = `<div class="decklist-rows">${items.map(x=>deckRowHtml(x.card,x.count)).join("")}</div>`;
+    box.innerHTML = `<div class="decklist-rows">${items.map(x=>deckRowHtml(x.card,x.count, zone, sel)).join("")}</div>`;
   }
-  wireDeckListPanel(box);
+  wireZonePanel(box, zone);
 }
 
-function deckRowHtml(card, count){
+/* Click anywhere on a row opens the card's detail modal; the −/+ steppers
+   and the move-to-other-zone button only fade in on hover (via CSS,
+   .deck-row-stepper) so the row reads cleanly at rest, but the quantity
+   itself always stays visible. The checkbox and buttons stop click
+   propagation so they don't also pop the modal open. data-decklist-card-id
+   also drives the global hover-preview (see part11_boot.js), scoped to
+   "pairs well with, in this deck". */
+function deckRowHtml(card, count, zone, sel){
   const [c1] = cardMainDomainColorPair(card);
   return `
-  <div class="decklist-row">
-    <label class="row" style="gap:8px;align-items:center;flex:1;min-width:0;cursor:pointer;">
-      <input type="checkbox" data-select-id="${card.id}" ${builderState.deckSelected.has(card.id)?"checked":""}>
-      <span class="tabular" style="width:20px;text-align:center;font-weight:700;color:${c1};flex:none;">${card.energy??"–"}</span>
-      <span data-open-id="${card.id}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(card.name)}</span>
-    </label>
-    <div class="row" style="gap:4px;flex:none;">
-      <button class="btn small" data-sub-id="${card.id}" style="padding:2px 8px;">−</button>
-      <span class="tabular" style="width:16px;text-align:center;">${count}</span>
-      <button class="btn small" data-add2-id="${card.id}" style="padding:2px 8px;">+</button>
+  <div class="decklist-row" data-decklist-card-id="${card.id}" data-open-id="${card.id}">
+    <input type="checkbox" data-select-id="${card.id}" ${sel.has(card.id)?"checked":""} onclick="event.stopPropagation()">
+    <span class="tabular" style="width:20px;text-align:center;font-weight:700;color:${c1};flex:none;">${card.energy??"–"}</span>
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(card.name)}</span>
+    <div class="row" style="gap:4px;flex:none;align-items:center;">
+      <button class="btn small deck-row-stepper" data-sub-id="${card.id}" style="padding:2px 8px;" onclick="event.stopPropagation()">−</button>
+      <span class="tabular" style="width:20px;text-align:center;">×${count}</span>
+      <button class="btn small deck-row-stepper" data-add2-id="${card.id}" style="padding:2px 8px;" onclick="event.stopPropagation()">+</button>
+      <button class="btn small ghost deck-row-stepper" data-move-id="${card.id}" title="${zone==='side'?'Move to Main Deck':'Move to Sideboard'}" onclick="event.stopPropagation()" style="padding:2px 6px;">${zone==='side'?'→ Main':'→ Side'}</button>
     </div>
   </div>`;
 }
 
-function wireDeckListPanel(box){
+function wireZonePanel(box, zone){
+  const sel = zoneSelectedSet(zone);
   box.querySelectorAll("[data-select-id]").forEach(cb=>cb.addEventListener("change", ()=>{
     const id = cb.getAttribute("data-select-id");
-    if(cb.checked) builderState.deckSelected.add(id); else builderState.deckSelected.delete(id);
-    renderDeckSelectionBar();
+    if(cb.checked) sel.add(id); else sel.delete(id);
+    renderZoneSelectionBar(zone);
   }));
-  box.querySelectorAll("[data-sub-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(activeDeck(), elx.getAttribute("data-sub-id"), -1); refreshBuilderAfterDeckChange(); }));
-  box.querySelectorAll("[data-add2-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(activeDeck(), elx.getAttribute("data-add2-id"), 1); refreshBuilderAfterDeckChange(); }));
+  box.querySelectorAll("[data-sub-id]").forEach(elx=>elx.addEventListener("click", (e)=>{
+    e.stopPropagation();
+    if(zone==="side") addToSide(activeDeck(), elx.getAttribute("data-sub-id"), -1); else addToMain(activeDeck(), elx.getAttribute("data-sub-id"), -1);
+    refreshBuilderAfterDeckChange();
+  }));
+  box.querySelectorAll("[data-add2-id]").forEach(elx=>elx.addEventListener("click", (e)=>{
+    e.stopPropagation();
+    if(zone==="side") addToSide(activeDeck(), elx.getAttribute("data-add2-id"), 1); else addToMain(activeDeck(), elx.getAttribute("data-add2-id"), 1);
+    refreshBuilderAfterDeckChange();
+  }));
+  box.querySelectorAll("[data-move-id]").forEach(elx=>elx.addEventListener("click", (e)=>{
+    e.stopPropagation();
+    const id = elx.getAttribute("data-move-id");
+    if(zone==="side") moveSideToMain(activeDeck(), id, 1); else moveMainToSide(activeDeck(), id, 1);
+    refreshBuilderAfterDeckChange();
+  }));
   box.querySelectorAll("[data-open-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-open-id"))));
-  box.querySelectorAll("[data-card-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-card-id"))));
+  box.querySelectorAll(".mini-card[data-card-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-card-id"))));
 }
 
-function renderDeckSelectionBar(){
-  const box = byId("deckSelectionBar");
+function renderZoneSelectionBar(zone){
+  const box = byId(zone==="side"?"sideSelectionBar":"deckSelectionBar");
   if(!box) return;
-  const n = builderState.deckSelected.size;
+  const sel = zoneSelectedSet(zone);
+  const n = sel.size;
   if(!n){ box.innerHTML=""; return; }
+  const removeBtnId = zone==="side"?"sideBulkRemoveBtn":"bulkRemoveBtn";
+  const clearBtnId = zone==="side"?"sideClearSelBtn":"clearSelBtn";
   box.innerHTML = `<div class="row" style="gap:8px;align-items:center;margin:6px 0;">
     <span class="hint">${n} selected</span>
-    <button class="btn small danger" id="bulkRemoveBtn">Remove</button>
-    <button class="btn ghost small" id="clearSelBtn">Clear</button>
+    <button class="btn small danger" id="${removeBtnId}">Remove</button>
+    <button class="btn ghost small" id="${clearBtnId}">Clear</button>
   </div>`;
-  byId("bulkRemoveBtn").addEventListener("click", ()=>{
-    if(!confirm(`Remove ${n} card${n>1?'s':''} from the deck?`)) return;
+  byId(removeBtnId).addEventListener("click", ()=>{
+    if(!confirm(`Remove ${n} card${n>1?'s':''} from the ${zone==="side"?"sideboard":"deck"}?`)) return;
     const deck = activeDeck();
-    for(const id of builderState.deckSelected) delete deck.main[id];
-    builderState.deckSelected = new Set();
+    const zoneMap = zone==="side" ? deck.side : deck.main;
+    for(const id of sel) delete zoneMap[id];
+    sel.clear();
     touchDeck();
     refreshBuilderAfterDeckChange();
   });
-  byId("clearSelBtn").addEventListener("click", ()=>{ builderState.deckSelected=new Set(); renderDeckListPanel(); });
+  byId(clearBtnId).addEventListener("click", ()=>{ sel.clear(); renderZonePanel(zone); });
 }
 
 function refreshBuilderAfterDeckChange(){
   renderLegality();
-  renderDeckListPanel();
-  if(builderState.tab==="main") refreshPoolGrid();
+  renderStatusCurve();
+  renderZonePanel("main");
+  renderZonePanel("side");
+  if(builderState.tab==="main" || builderState.tab==="sideboard") refreshPoolGrid();
   if(builderState.tab==="runes" || builderState.tab==="battlefields") renderBuilderTabBody();
 }
 
@@ -1967,7 +2196,7 @@ function renderBuilderTabBody(){
     byId("legendSearch").addEventListener("input", debounce(e=>{ builderState.legendQ=e.target.value; renderLegendGrid(activeDeck()); },150));
     return;
   }
-  if(builderState.tab==="main"){ renderMainPoolTab(body, deck, legend); return; }
+  if(builderState.tab==="main" || builderState.tab==="sideboard"){ renderMainPoolTab(body, deck, legend); return; }
   if(builderState.tab==="runes"){
     const legalRunes = POOL_RUNE.filter(c=>cardLegalForLegend(c, legend));
     body.innerHTML = `
@@ -2017,15 +2246,22 @@ function renderLegendGrid(deck){
   grid.querySelectorAll("[data-legend-id]").forEach(elx=>elx.addEventListener("click", ()=>{
     setLegend(deck, elx.getAttribute("data-legend-id"));
     builderState.deckSelected = new Set();
+    builderState.sideSelected = new Set();
     builderState.tab = "main"; // jump straight to building once a legend is picked
     renderBuilderView();
   }));
 }
 
-/* ---- Main Deck tab: filterable/sortable pool browser + optional playstyle focus ---- */
+/* ---- Main Deck / Sideboard tab: filterable/sortable pool browser + optional
+   playstyle focus. Both tabs reuse this exact browser — clicking a card
+   adds to whichever zone builderState.tab currently says (see
+   refreshPoolGrid/renderPoolGrid below), so filters and search carry over
+   naturally between the two rather than being reset. ---- */
 function renderMainPoolTab(body, deck, legend){
+  const zone = builderState.tab==="sideboard" ? "side" : "main";
   body.innerHTML = `
     ${!legend?'<p class="hint">Select a Legend first to see legal cards.</p>':''}
+    ${zone==="side"?'<p class="hint" style="margin-bottom:8px;">Adding to your <strong>Sideboard</strong> — switch to the Main Deck tab to add to your main 40+ instead.</p>':''}
     <div class="card-surface pad" style="margin:10px 0;">
       <div class="row wrap" style="gap:8px;">
         <input type="search" id="poolSearch" placeholder="Search within your Legend's colors…" value="${escapeHtml(builderState.poolQ)}" style="flex:1;min-width:180px;">
@@ -2121,23 +2357,30 @@ function refreshPoolGrid(){
   const deck = activeDeck();
   const legend = deckLegend(deck);
   const filtered = filteredPoolCards(legend);
+  const zone = builderState.tab==="sideboard" ? "side" : "main";
   const countEl = byId("poolCount");
   if(countEl){
+    const label = zone==="side" ? "Available cards — adding to Sideboard" : "Available cards";
     countEl.textContent = filtered.length>150
-      ? `Available cards (showing 150 of ${filtered.length} — narrow with search/filters to see more)`
-      : `Available cards (${filtered.length})`;
+      ? `${label} (showing 150 of ${filtered.length} — narrow with search/filters to see more)`
+      : `${label} (${filtered.length})`;
   }
-  renderPoolGrid(filtered, deck);
+  renderPoolGrid(filtered, deck, zone);
 }
-function renderPoolGrid(filtered, deck){
+function renderPoolGrid(filtered, deck, zone){
   const grid = byId("poolGrid");
   if(!grid) return;
   const hasFocus = builderState.focusTags.size>0;
+  const zoneMap = zone==="side" ? (deck.side||{}) : deck.main;
   grid.innerHTML = filtered.slice(0,150).map(c=>{
     const score = hasFocus ? focusMatchScore(c) : null;
-    return `<div data-add-id="${c.id}" style="cursor:pointer;">${miniCardHtml(c,{qty:deck.main[c.id]||0, matchScore:score})}</div>`;
+    return `<div data-add-id="${c.id}" style="cursor:pointer;">${miniCardHtml(c,{qty:zoneMap[c.id]||0, matchScore:score})}</div>`;
   }).join("");
-  grid.querySelectorAll("[data-add-id]").forEach(elx=>elx.addEventListener("click", ()=>{ addToMain(activeDeck(), elx.getAttribute("data-add-id"), 1); refreshBuilderAfterDeckChange(); }));
+  grid.querySelectorAll("[data-add-id]").forEach(elx=>elx.addEventListener("click", ()=>{
+    const id = elx.getAttribute("data-add-id");
+    if(zone==="side") addToSide(activeDeck(), id, 1); else addToMain(activeDeck(), id, 1);
+    refreshBuilderAfterDeckChange();
+  }));
 }
 
 /* ---- Import tab: paste text, parse, preview, commit ---- */
@@ -2215,7 +2458,7 @@ function commitImport(preview){
     else if(item.target==="battlefield" && deck.battlefields.length<3 && !deck.battlefields.includes(item.card.id)) toggleBattlefield(deck, item.card.id);
   }
   saveStore();
-  builderState.importText=""; builderState.importPreview=null; builderState.tab="main"; builderState.deckSelected=new Set();
+  builderState.importText=""; builderState.importPreview=null; builderState.tab="main"; builderState.deckSelected=new Set(); builderState.sideSelected=new Set();
   renderBuilderView();
 }
 
@@ -2431,12 +2674,21 @@ function createForceGraph(canvas, opts){
     ctx.setTransform(dpr,0,0,dpr,0,0);
   }
 
-  function edgeColor(reasons){
-    const types = reasons.map(r=>r.type);
-    if(types.includes("combo")) return getCss("--dom-chaos");
-    if(types.includes("tribal")) return getCss("--accent");
-    if(types.includes("keyword")) return getCss("--focus");
+  const EDGE_TYPE_ORDER = ["combo","tribal","keyword","domain"];
+  function edgeColorFor(type){
+    if(type==="combo") return getCss("--dom-chaos");
+    if(type==="tribal") return getCss("--accent");
+    if(type==="keyword") return getCss("--focus");
     return getCss("--ink-muted");
+  }
+  /* Up to 2 colors per edge: an edge can legitimately qualify for more than
+     one reason family at once (e.g. two cards share a keyword AND form a
+     real combo pair) — showing both, as two thinner parallel lines, beats
+     silently collapsing to whichever type wins priority. */
+  function edgeColors(reasons){
+    const present = EDGE_TYPE_ORDER.filter(t=>reasons.some(r=>r.type===t));
+    if(!present.length) return [getCss("--ink-muted")];
+    return present.slice(0,2).map(edgeColorFor);
   }
   function domainNodeColor(card){
     const doms=(card.domain||[]).filter(d=>d!=="Colorless");
@@ -2502,11 +2754,28 @@ function createForceGraph(canvas, opts){
       const a = state.nodes.find(n=>n.id===e.a), b = state.nodes.find(n=>n.id===e.b);
       if(!a||!b) continue;
       const isHover = state.hoverEdge===e;
-      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
-      ctx.strokeStyle = edgeColor(e.reasons);
+      const colors = edgeColors(e.reasons);
+      const width = (isHover?1.7:1) * clamp(e.score/22, 1, 6);
       ctx.globalAlpha = isHover ? 0.95 : 0.5;
-      ctx.lineWidth = (isHover?1.7:1) * clamp(e.score/22, 1, 6);
-      ctx.stroke();
+      if(colors.length<2){
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+        ctx.strokeStyle = colors[0];
+        ctx.lineWidth = width;
+        ctx.stroke();
+      } else {
+        const dx=b.x-a.x, dy=b.y-a.y, len=Math.max(1,Math.sqrt(dx*dx+dy*dy));
+        const px=-dy/len, py=dx/len; // unit perpendicular to the edge
+        const off = Math.max(1.4, width*0.55);
+        ctx.lineWidth = Math.max(1, width*0.62);
+        for(let i=0;i<colors.length;i++){
+          const sign = i===0 ? -1 : 1;
+          ctx.beginPath();
+          ctx.moveTo(a.x+px*off*sign, a.y+py*off*sign);
+          ctx.lineTo(b.x+px*off*sign, b.y+py*off*sign);
+          ctx.strokeStyle = colors[i];
+          ctx.stroke();
+        }
+      }
       ctx.globalAlpha = 1;
     }
     for(const n of state.nodes){
@@ -2681,6 +2950,7 @@ function renderGraphView(){
   const deck = activeDeck();
   if(!graphState.centerId && LEGENDS.length) graphState.centerId = deckMainCards(deck)[0]?.card.id || LEGENDS[0].id;
   root.innerHTML = `
+    ${backButtonHtml()}
     <div class="viewhead"><div><h2>Synergy Web</h2><p>A visual overview of how cards connect via shared tags, domains, keywords, and heuristic combo patterns. Node size reflects each card's heuristic power score; hover a node or a link for details and card art.</p></div></div>
     <div class="card-surface pad" style="margin-bottom:12px;">
       <div class="row wrap" style="gap:10px;">
@@ -2750,6 +3020,7 @@ function renderGraphView(){
   byId("graphZoomIn").addEventListener("click", ()=>graphEngine.zoomBy(1.25));
   byId("graphZoomOut").addEventListener("click", ()=>graphEngine.zoomBy(0.8));
   byId("graphZoomReset").addEventListener("click", ()=>{ graphEngine.resetView(); graphEngine.draw(); });
+  wireBackButton();
   rebuildGraphView();
 }
 
@@ -2850,14 +3121,35 @@ function renderGraphSidebar(nodes, edges){
    Card name lookups use the shared findCardByName() (part3_state.js), which
    already covers exact match, "Legend - Title" vs "Legend, Title" punctuation
    variance, and a unique-substring fallback. */
-const metaState = { openEvent:null, compareDeckKey:null, hoverPool:[] };
+const metaState = {
+  openEvent:null, compareDeckKey:null, hoverPool:[],
+  tab:"events",                                  // "events" | "domains"
+  domainFilterEvent:"", domainFilterFrom:"", domainFilterTo:"",
+};
 
 function renderMetaView(){
   const root = byId("view-meta");
-  const tier = META_DATA.current_meta_tier_list;
   root.innerHTML = `
     <div class="viewhead"><div><h2>Meta &amp; Tournament Data</h2><p>Real, source-cited data from recently played tournaments – compiled ${escapeHtml(META_DATA.compiled_date||"")}. This is a snapshot, not a live feed.</p></div></div>
+    <div class="subtabs">
+      <button class="subtab ${metaState.tab!=='domains'?'active':''}" data-meta-tab="events">Events &amp; Tier List</button>
+      <button class="subtab ${metaState.tab==='domains'?'active':''}" data-meta-tab="domains">Domain Breakdown</button>
+    </div>
+    <div id="metaTabBody"></div>
+  `;
+  root.querySelectorAll("[data-meta-tab]").forEach(b=>b.addEventListener("click", ()=>{
+    metaState.tab = b.getAttribute("data-meta-tab");
+    renderMetaView();
+  }));
+  renderMetaTabBody();
+}
 
+function renderMetaTabBody(){
+  const body = byId("metaTabBody");
+  if(metaState.tab==="domains"){ renderDomainBreakdownTab(body); return; }
+
+  const tier = META_DATA.current_meta_tier_list;
+  body.innerHTML = `
     ${tier?`<div class="card-surface pad" style="margin-bottom:14px;">
       <h3>Tier list (${escapeHtml(tier.source||"")})</h3>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
@@ -2997,6 +3289,320 @@ function saveMetaDecklistAsDeck(metaDeck, rows){
   switchView("builder");
   const nb = document.querySelector("[data-view='builder']"); if(nb) nb.click();
   alert(`Saved "${deck.name}" as a new deck in your Deck Builder${skipped?` (${skipped} card(s) not found in the database were skipped)`:""}.`);
+}
+
+/* ===================== DOMAIN BREAKDOWN =====================
+   Aggregates domain representation — individually and in pairs — across
+   every published decklist in META_DATA.events[].decks[], filterable by
+   event or by date. About a third of decks in the source data don't carry
+   an explicit `domains` field, so that's filled in from the resolved
+   Legend's own domain when missing (findCardByName, same fuzzy matcher used
+   throughout Meta & Tournaments). Clicking a domain opens a card-modal-style
+   panel with its commonly-played cards, keywords, a heuristic playstyle
+   read (via the existing 8-axis scoring engine), and its pairings; clicking
+   a pairing drills into ranked Legends for that exact domain pair. */
+
+function allMetaDecks(){
+  const out = [];
+  for(const ev of META_DATA.events){
+    for(const dk of (ev.decks||[])) out.push(Object.assign({}, dk, { _event: ev }));
+  }
+  return out;
+}
+function metaDeckDate(dk){
+  const m = /^\d{4}-\d{2}-\d{2}/.exec((dk._event&&dk._event.date)||"");
+  return m ? m[0] : null;
+}
+/* Some meta-data entries (mostly the summary "most represented legend"
+   rows, as opposed to full decklist submissions) give only a champion's
+   bare first name — "Master Yi" — with no title, while every Legend card
+   here is named "<Champion> - <Title>". findCardByName()'s unique-substring
+   fallback correctly refuses that as ambiguous (several champions have
+   multiple titles, and the name can also collide with non-Legend cards).
+   For domain-lookup purposes specifically that ambiguity doesn't matter:
+   every printing/title of the same champion shares the same domain
+   identity in this game, so matching on just the champion-name prefix and
+   taking the first hit is safe here even where it wouldn't be for a
+   card-accurate decklist import. */
+function metaLegendCard(name){
+  if(!name) return null;
+  const exact = findCardByName(name);
+  if(exact && exact.type==="Legend") return exact;
+  const normTarget = normalizeCardName(name);
+  return LEGENDS.find(l=>normalizeCardName(l.name.split(/\s*-\s*/)[0])===normTarget) || null;
+}
+function metaDeckDomains(dk){
+  if(dk.domains && dk.domains.length) return dk.domains.filter(d=>d && d!=="Colorless");
+  const legendCard = metaLegendCard(dk.legend);
+  return legendCard ? (legendCard.domain||[]).filter(d=>d!=="Colorless") : [];
+}
+function filteredMetaDecks(){
+  let decks = allMetaDecks();
+  if(metaState.domainFilterEvent) decks = decks.filter(dk=>dk._event.name===metaState.domainFilterEvent);
+  if(metaState.domainFilterFrom) decks = decks.filter(dk=>{ const d=metaDeckDate(dk); return d && d>=metaState.domainFilterFrom; });
+  if(metaState.domainFilterTo) decks = decks.filter(dk=>{ const d=metaDeckDate(dk); return d && d<=metaState.domainFilterTo; });
+  return decks;
+}
+
+/* individual: domain -> {deckCount, cardCounts:Map<id,count>, keywordCounts:Map<kw,count>}
+   pairs: "A|B" (alphabetical) -> {deckCount, legendCounts:Map<name,count>} */
+function domainStats(decks){
+  const individual = {}, pairs = {};
+  for(const dk of decks){
+    const doms = [...new Set(metaDeckDomains(dk))];
+    if(!doms.length) continue;
+    for(const d of doms){
+      if(!individual[d]) individual[d] = { deckCount:0, cardCounts:new Map(), keywordCounts:new Map() };
+      const bucket = individual[d];
+      bucket.deckCount++;
+      for(const entry of (dk.decklist||[])){
+        const card = findCardByName(entry.card_name);
+        if(!card || !DECKBUILDABLE_TYPES.includes(card.type)) continue;
+        bucket.cardCounts.set(card.id, (bucket.cardCounts.get(card.id)||0) + entry.count);
+        for(const k of (card.kw||[])) bucket.keywordCounts.set(k, (bucket.keywordCounts.get(k)||0) + entry.count);
+      }
+    }
+    for(let i=0;i<doms.length;i++) for(let j=i+1;j<doms.length;j++){
+      const key = [doms[i],doms[j]].sort().join("|");
+      if(!pairs[key]) pairs[key] = { deckCount:0, legendCounts:new Map() };
+      pairs[key].deckCount++;
+      const name = dk.legend || "Unknown Legend";
+      pairs[key].legendCounts.set(name, (pairs[key].legendCounts.get(name)||0) + 1);
+    }
+  }
+  return { individual, pairs };
+}
+
+/* Weighted-average axis profile + curve + combo density for a bucket of
+   cards, feeding the playstyle classifier below. Reuses cardAxisProfile()
+   (part4b_axis.js) and computeSynergy() (part4_engine.js) exactly as they're
+   used everywhere else in the app — nothing domain-specific about the math,
+   just aggregated over "every card seen across these decklists". */
+function computePlaystyleInputs(cardCounts){
+  let totalWeight=0, costWeighted=0;
+  const axisSum = Object.fromEntries(AXES.map(a=>[a,0]));
+  const weighted = [];
+  for(const [id,w] of cardCounts){
+    const card = CARD_BY_ID.get(id);
+    if(!card || !DECKBUILDABLE_TYPES.includes(card.type)) continue;
+    weighted.push({card,w});
+    totalWeight += w;
+    if(card.energy!=null) costWeighted += card.energy*w;
+    const profile = cardAxisProfile(card).pct;
+    for(const a of AXES) axisSum[a] += profile[a]*w;
+  }
+  if(!totalWeight) return null;
+  const axisAvg = Object.fromEntries(AXES.map(a=>[a, axisSum[a]/totalWeight]));
+  const avgCost = costWeighted/totalWeight;
+  // combo density, capped to the ~40 most-common cards so this stays cheap
+  const top = weighted.sort((a,b)=>b.w-a.w).slice(0,40).map(x=>x.card);
+  let comboPairs=0, totalPairs=0;
+  for(let i=0;i<top.length;i++) for(let j=i+1;j<top.length;j++){
+    totalPairs++;
+    const syn = computeSynergy(top[i], top[j]);
+    if(syn && syn.reasons.some(r=>r.type==="combo")) comboPairs++;
+  }
+  return { axisAvg, avgCost, comboDensity: totalPairs ? comboPairs/totalPairs : 0 };
+}
+
+/* Heuristic archetype scoring — not a lookup table, a formula over the same
+   8 axes used elsewhere, plus average cost and measured combo density.
+   Deliberately covers both the "traditional" archetypes the user asked for
+   (Aggro/Control/Midrange/Tempo/Combo) and two that are specific to this
+   game's actual battlefield mechanic (Conqueror/Fortress), since Conquer
+   and Hold are already first-class axes here. */
+const PLAYSTYLE_ARCHETYPES = [
+  { key:"aggro", label:"Aggro", desc:"Low curve, high Offense — race the opponent before they stabilize.",
+    score: p => p.axisAvg.offense + Math.max(0,(3.2-p.avgCost))*16 },
+  { key:"control", label:"Control", desc:"High Control, tolerates a higher curve — deny and outlast.",
+    score: p => p.axisAvg.control + Math.max(0,(p.avgCost-3.2))*9 },
+  { key:"tempo", label:"Tempo", desc:"Ambush and reactive spell value at a low-mid curve.",
+    score: p => p.axisAvg.ambush*0.65 + p.axisAvg.spellslinging*0.55 + Math.max(0,(3.5-p.avgCost))*6 },
+  { key:"midrange", label:"Midrange", desc:"Board-building and defense at a moderate curve — grinds out advantage.",
+    score: p => p.axisAvg.boardbuild*0.7 + p.axisAvg.defense*0.5 },
+  { key:"combo", label:"Combo", desc:"A dense concentration of known combo pairings (see Synergy Web).",
+    score: p => p.comboDensity*260 },
+  { key:"conqueror", label:"Conqueror", desc:"Built around taking battlefields it doesn't already hold.",
+    score: p => p.axisAvg.conquer*1.15 },
+  { key:"fortress", label:"Fortress", desc:"Built around defending battlefields it already controls.",
+    score: p => p.axisAvg.hold*1.15 },
+];
+function classifyPlaystyle(cardCounts){
+  const p = computePlaystyleInputs(cardCounts);
+  if(!p) return [];
+  return PLAYSTYLE_ARCHETYPES.map(a=>({ key:a.key, label:a.label, desc:a.desc, score:a.score(p) })).sort((x,y)=>y.score-x.score);
+}
+
+function renderDomainBreakdownTab(body){
+  const decks = filteredMetaDecks();
+  const stats = domainStats(decks);
+  const events = META_DATA.events;
+  const withDomains = decks.filter(dk=>metaDeckDomains(dk).length).length;
+  const filtersActive = metaState.domainFilterEvent || metaState.domainFilterFrom || metaState.domainFilterTo;
+  body.innerHTML = `
+    <div class="card-surface pad" style="margin-bottom:14px;">
+      <div class="row wrap" style="gap:14px;align-items:center;">
+        <label class="hint">Event
+          <select id="domFilterEvent" style="margin-left:4px;">
+            <option value="">All events</option>
+            ${events.map(ev=>`<option value="${escapeHtml(ev.name)}" ${metaState.domainFilterEvent===ev.name?"selected":""}>${escapeHtml(ev.name)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="hint">From <input type="date" id="domFilterFrom" value="${metaState.domainFilterFrom||""}" style="margin-left:4px;"></label>
+        <label class="hint">To <input type="date" id="domFilterTo" value="${metaState.domainFilterTo||""}" style="margin-left:4px;"></label>
+        ${filtersActive?`<button class="btn ghost small" id="domFilterClear">Clear filters</button>`:""}
+      </div>
+      <p class="hint" style="margin-top:8px;">Based on ${withDomains} decklist(s) with known domains, out of ${decks.length} in the current filter. Not every event publishes full decklists or domain info for every placement — this reflects what's documented, not the full field.</p>
+    </div>
+    <div class="row wrap" style="gap:14px;align-items:flex-start;">
+      <div class="card-surface pad" style="flex:1;min-width:280px;">
+        <h3>Individual domains</h3>
+        <div id="domIndividualList"></div>
+      </div>
+      <div class="card-surface pad" style="flex:1;min-width:280px;">
+        <h3>Domain pairings</h3>
+        <div id="domPairList"></div>
+      </div>
+    </div>
+  `;
+  renderDomainIndividualList(stats);
+  renderDomainPairList(stats);
+  byId("domFilterEvent").addEventListener("change", e=>{ metaState.domainFilterEvent=e.target.value; renderDomainBreakdownTab(body); });
+  byId("domFilterFrom").addEventListener("change", e=>{ metaState.domainFilterFrom=e.target.value; renderDomainBreakdownTab(body); });
+  byId("domFilterTo").addEventListener("change", e=>{ metaState.domainFilterTo=e.target.value; renderDomainBreakdownTab(body); });
+  const clearBtn = byId("domFilterClear");
+  if(clearBtn) clearBtn.addEventListener("click", ()=>{
+    metaState.domainFilterEvent=""; metaState.domainFilterFrom=""; metaState.domainFilterTo="";
+    renderDomainBreakdownTab(body);
+  });
+}
+
+function renderDomainIndividualList(stats){
+  const box = byId("domIndividualList");
+  const rows = DOMAIN_ORDER.filter(d=>d!=="Colorless").map(d=>({ domain:d, count: stats.individual[d]?stats.individual[d].deckCount:0 })).sort((a,b)=>b.count-a.count);
+  const maxCount = Math.max(1, ...rows.map(r=>r.count));
+  box.innerHTML = rows.map(r=>`
+    <div class="row" data-domain-key="${r.domain}" style="gap:10px;align-items:center;margin:6px 0;${r.count?'cursor:pointer;':'opacity:.5;'}">
+      ${domainChip(r.domain)}
+      <div style="flex:1;background:var(--surface-2);border-radius:4px;height:10px;overflow:hidden;">
+        <div style="width:${(r.count/maxCount)*100}%;height:100%;background:var(--accent);"></div>
+      </div>
+      <span class="tabular" style="width:26px;text-align:right;font-weight:700;">${r.count}</span>
+    </div>`).join("");
+  box.querySelectorAll("[data-domain-key]").forEach(rowEl=>{
+    const d = rowEl.getAttribute("data-domain-key");
+    if(stats.individual[d] && stats.individual[d].deckCount) rowEl.addEventListener("click", ()=>openDomainModal(d, stats));
+  });
+}
+
+function renderDomainPairList(stats){
+  const box = byId("domPairList");
+  const rows = Object.entries(stats.pairs).map(([key,v])=>({ key, doms:key.split("|"), count:v.deckCount })).sort((a,b)=>b.count-a.count);
+  const maxCount = Math.max(1, ...rows.map(r=>r.count));
+  box.innerHTML = rows.length ? rows.map(r=>`
+    <div class="row" data-pair-key="${r.key}" style="gap:10px;align-items:center;margin:6px 0;cursor:pointer;">
+      <div class="row" style="gap:2px;flex:none;">${r.doms.map(d=>domainChip(d)).join("")}</div>
+      <div style="flex:1;background:var(--surface-2);border-radius:4px;height:10px;overflow:hidden;">
+        <div style="width:${(r.count/maxCount)*100}%;height:100%;background:var(--accent);"></div>
+      </div>
+      <span class="tabular" style="width:26px;text-align:right;font-weight:700;">${r.count}</span>
+    </div>`).join("") : '<p class="hint">No domain pairings in the current filter.</p>';
+  box.querySelectorAll("[data-pair-key]").forEach(rowEl=>{
+    const [a,b] = rowEl.getAttribute("data-pair-key").split("|");
+    rowEl.addEventListener("click", ()=>openDomainPairModal(a, b, stats));
+  });
+}
+
+function domainModalBodyHtml(domain, stats){
+  const data = stats.individual[domain] || { deckCount:0, cardCounts:new Map(), keywordCounts:new Map() };
+  const topCards = [...data.cardCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const topKeywords = [...data.keywordCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const playstyle = classifyPlaystyle(data.cardCounts);
+  const maxScore = Math.max(1, ...playstyle.map(p=>p.score));
+  const pairings = Object.entries(stats.pairs)
+    .filter(([key])=>key.split("|").includes(domain))
+    .map(([key,v])=>({ other: key.split("|").find(d=>d!==domain), count:v.deckCount }))
+    .sort((a,b)=>b.count-a.count);
+  return `
+    <div class="pad">
+      <div class="spread"><h2>${domainChip(domain)} domain</h2><button class="btn ghost small" data-action="close-modal">Close</button></div>
+      <p class="hint">${data.deckCount} decklist(s) featuring ${escapeHtml(DOMAIN_LABEL[domain]||domain)} in the current filter.</p>
+      ${data.deckCount ? `
+      <div class="row wrap" style="gap:16px;align-items:flex-start;margin-top:10px;">
+        <div style="flex:1;min-width:240px;">
+          <h4>Playstyle (heuristic)</h4>
+          <p class="hint" style="margin-bottom:6px;">Computed from the same 8-axis scoring engine used elsewhere in the app, weighted by how often each card appears across these decklists — not real win-rate data.</p>
+          ${playstyle.slice(0,3).map(p=>`
+            <div style="margin-bottom:6px;">
+              <div class="spread"><strong>${escapeHtml(p.label)}</strong></div>
+              <div class="hint" style="font-size:.72rem;">${escapeHtml(p.desc)}</div>
+              <div style="background:var(--surface-2);border-radius:4px;height:8px;overflow:hidden;margin-top:2px;"><div style="width:${clamp(p.score/maxScore*100,3,100)}%;height:100%;background:var(--accent);"></div></div>
+            </div>`).join("")}
+        </div>
+        <div style="flex:1;min-width:200px;">
+          <h4>Common keywords</h4>
+          <div class="row wrap" style="gap:6px;">${topKeywords.length? topKeywords.map(([k,c])=>`<span class="chip" title="${c} copies across these decklists">${escapeHtml(k)} (${c})</span>`).join("") : '<span class="hint">No tagged keywords found.</span>'}</div>
+        </div>
+      </div>
+      <h4 style="margin-top:14px;">Commonly played cards</h4>
+      <div class="grid" style="grid-template-columns:1fr;gap:6px;">
+        ${topCards.map(([id,count])=>{
+          const card = CARD_BY_ID.get(id);
+          if(!card) return "";
+          return `<div class="row" style="justify-content:space-between;padding:6px 10px;background:var(--surface-2);border-radius:8px;cursor:pointer;" data-action="open-card" data-id="${card.id}">
+            <span>${escapeHtml(card.name)}</span><span class="tabular" style="font-weight:700;">${count}</span>
+          </div>`;
+        }).join("")}
+      </div>
+      <h4 style="margin-top:14px;">Domain pairings</h4>
+      <div class="row wrap" style="gap:8px;">
+        ${pairings.length? pairings.map(p=>`<span class="chip clickable" data-pair-back="${domain}" data-pair-other="${p.other}">${domainChip(p.other)} × ${p.count}</span>`).join("") : '<span class="hint">No paired-domain decklists in the current filter.</span>'}
+      </div>
+      ` : `<p class="hint">No decklists in the current filter feature this domain — try widening the event/date filter.</p>`}
+    </div>
+  `;
+}
+function openDomainModal(domain, stats){
+  const back = el("div","modal-back"); back.id="modalBack";
+  back.innerHTML = `<div class="modal">${domainModalBodyHtml(domain, stats)}</div>`;
+  back.addEventListener("click", e=>{ if(e.target===back) closeModal(); });
+  document.body.appendChild(back);
+  back.querySelectorAll("[data-pair-back]").forEach(elx=>elx.addEventListener("click", ()=>{
+    closeModal();
+    openDomainPairModal(elx.getAttribute("data-pair-back"), elx.getAttribute("data-pair-other"), stats, elx.getAttribute("data-pair-back"));
+  }));
+}
+
+function domainPairModalBodyHtml(domainA, domainB, stats, backDomain){
+  const key = [domainA,domainB].sort().join("|");
+  const data = stats.pairs[key] || { deckCount:0, legendCounts:new Map() };
+  const legends = [...data.legendCounts.entries()].sort((a,b)=>b[1]-a[1]);
+  return `
+    <div class="pad">
+      <div class="spread"><h2>${domainChip(domainA)} × ${domainChip(domainB)}</h2><button class="btn ghost small" data-action="close-modal">Close</button></div>
+      ${backDomain?`<button class="btn ghost small" data-domain-back="${backDomain}" style="margin-bottom:6px;">← Back to ${escapeHtml(DOMAIN_LABEL[backDomain]||backDomain)}</button>`:""}
+      <p class="hint">${data.deckCount} decklist(s) pairing these domains in the current filter.</p>
+      <h4 style="margin-top:10px;">Ranked Legends</h4>
+      <div class="grid" style="grid-template-columns:1fr;gap:6px;">
+        ${legends.length? legends.map(([name,count])=>{
+          const legendCard = metaLegendCard(name);
+          return `<div class="row" style="justify-content:space-between;align-items:center;padding:6px 10px;background:var(--surface-2);border-radius:8px;${legendCard?'cursor:pointer;':''}" ${legendCard?`data-action="open-card" data-id="${legendCard.id}"`:""}>
+            <span>${escapeHtml(name)}</span><span class="tabular" style="font-weight:700;">${count}</span>
+          </div>`;
+        }).join("") : '<p class="hint">No decklists in the current filter.</p>'}
+      </div>
+    </div>
+  `;
+}
+function openDomainPairModal(domainA, domainB, stats, backDomain){
+  const back = el("div","modal-back"); back.id="modalBack";
+  back.innerHTML = `<div class="modal">${domainPairModalBodyHtml(domainA, domainB, stats, backDomain)}</div>`;
+  back.addEventListener("click", e=>{ if(e.target===back) closeModal(); });
+  document.body.appendChild(back);
+  back.querySelectorAll("[data-domain-back]").forEach(elx=>elx.addEventListener("click", ()=>{
+    closeModal();
+    openDomainModal(elx.getAttribute("data-domain-back"), stats);
+  }));
 }
 
 
@@ -3323,6 +3929,17 @@ function renderPlannerCategoryTable(){
 
 
 /* ===================== APP SHELL / BOOT ===================== */
+const VIEW_ICON = {
+  database: `<rect x="3" y="5" width="11" height="8" rx="1.3"/><path d="M6 5V3.3A1.3 1.3 0 0 1 7.3 2h9.4A1.3 1.3 0 0 1 18 3.3V10a1.3 1.3 0 0 1-1.3 1.3H15"/>`,
+  builder: `<rect x="3" y="3" width="10" height="14" rx="1.5"/><path d="M8 7v6M5 10h6"/><path d="M16 6v9a1.5 1.5 0 0 1-1.5 1.5H13"/>`,
+  stats: `<path d="M4 16V10M10 16V4M16 16V12"/>`,
+  synergy: `<circle cx="5" cy="15" r="1.7"/><circle cx="15" cy="15" r="1.7"/><circle cx="10" cy="5" r="1.7"/><path d="M6.3 13.5 8.8 6.5M13.7 13.5 11.2 6.5M6.8 15h6.4"/>`,
+  planner: `<rect x="3" y="4" width="14" height="13" rx="1.5"/><path d="M3 8h14M7 2v4M13 2v4"/>`,
+  meta: `<path d="M6 3h8v4a4 4 0 0 1-8 0V3Z"/><path d="M6 4H3.5A1.5 1.5 0 0 0 2 5.5 3 3 0 0 0 5 8.5M14 4h2.5A1.5 1.5 0 0 1 18 5.5 3 3 0 0 1 15 8.5"/><path d="M10 11v3M7 17h6M8 14h4v3H8Z"/>`,
+};
+function viewIconSvg(key){
+  return `<svg class="navicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${VIEW_ICON[key]||""}</svg>`;
+}
 const VIEWS = [
   { key:"database", label:"Card Database", render:renderDatabaseView },
   { key:"builder",  label:"Deck Builder",  render:renderBuilderView },
@@ -3332,6 +3949,10 @@ const VIEWS = [
   { key:"meta",     label:"Meta & Tournaments", render:renderMetaView },
 ];
 let currentView = "database";
+let previousView = null; // lets a view (e.g. Synergy Web) offer a "← Back" to wherever the user came from
+const SIDEBAR_COLLAPSE_KEY = "riftbound_sidebar_collapsed_v1";
+let sidebarCollapsed = false;
+try{ sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSE_KEY)==="1"; }catch(e){ /* ignore */ }
 
 function switchView(key){
   // leaving a view with a force-graph (Synergy Web / Turn Planner) while a
@@ -3340,11 +3961,34 @@ function switchView(key){
   // whatever view we're switching to
   if(currentView==="synergy" && key!=="synergy" && graphEngine){ graphEngine.destroy(); }
   if(currentView==="planner" && key!=="planner" && plannerGraphEngine){ plannerGraphEngine.destroy(); }
+  if(key!==currentView) previousView = currentView;
   currentView = key;
   document.querySelectorAll(".navbtn").forEach(b=>b.classList.toggle("active", b.getAttribute("data-view")===key));
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id===("view-"+key)));
   const v = VIEWS.find(v=>v.key===key);
   if(v) v.render();
+}
+
+function backButtonHtml(){
+  if(!previousView || previousView===currentView) return "";
+  const label = VIEWS.find(v=>v.key===previousView)?.label || "Back";
+  return `<button class="btn ghost small" id="btnBackToPrevious" style="margin-bottom:10px;">← Back to ${escapeHtml(label)}</button>`;
+}
+function wireBackButton(){
+  const b = byId("btnBackToPrevious");
+  if(b) b.addEventListener("click", ()=>{
+    const target = previousView;
+    switchView(target);
+    document.querySelector(`[data-view='${target}']`)?.click();
+  });
+}
+
+function setSidebarCollapsed(collapsed){
+  sidebarCollapsed = collapsed;
+  document.querySelector(".app").classList.toggle("sidebar-collapsed", collapsed);
+  const btn = byId("sidebarCollapseBtn");
+  if(btn) btn.setAttribute("title", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  try{ localStorage.setItem(SIDEBAR_COLLAPSE_KEY, collapsed?"1":"0"); }catch(e){ /* ignore */ }
 }
 
 function renderTopbarLegendPill(){
@@ -3390,31 +4034,50 @@ function wireGlobalEvents(){
     const t = e.target.closest(".kwterm");
     if(t) showKwTooltip(t);
   });
+  // scoped "pairs well with" only makes sense for a card that's actually
+  // sitting inside a built decklist (not the browsing pool/database/legend
+  // grid — "not looking outside, that's where someone would use the
+  // synergy web instead"); the Main Deck and Sideboard panels each scope to
+  // their own zone's cards.
+  function zoneHoverPool(target){
+    if(target.closest("#deckListPanel")) return deckMainCards(activeDeck()).map(x=>x.card);
+    if(target.closest("#sideListPanel")) return deckSideCards(activeDeck()).map(x=>x.card);
+    return null;
+  }
   document.body.addEventListener("mouseover", e=>{
     const mc = e.target.closest(".mini-card[data-card-id]");
     if(mc && !mc.closest(".modal")){
       const card = CARD_BY_ID.get(mc.getAttribute("data-card-id"));
-      if(card) showCardHoverPreview(e, card);
+      const withinCards = zoneHoverPool(mc);
+      if(card) showCardHoverPreview(mc, card, withinCards ? { withinCards } : undefined);
       return;
     }
     const dn = e.target.closest("[data-decklist-card-id]");
     if(dn){
       const card = CARD_BY_ID.get(dn.getAttribute("data-decklist-card-id"));
-      if(card) showCardHoverPreview(e, card, { withinCards: metaState.hoverPool||[] });
+      const withinCards = zoneHoverPool(dn) || metaState.hoverPool || [];
+      if(card) showCardHoverPreview(dn, card, { withinCards });
     }
   });
   document.body.addEventListener("mousemove", e=>{
     const kwt = e.target.closest(".kwterm");
     if(kwt){ if(_kwTooltipEl) positionTooltip(kwt); } else { hideKwTooltip(); }
     const hoverable = e.target.closest(".mini-card[data-card-id]") || e.target.closest("[data-decklist-card-id]");
-    if(hoverable){ positionHoverCardPreview(e); } else { hideCardHoverPreview(); }
+    if(!hoverable){ hideCardHoverPreview(); }
   });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ closeModal(); closeAccountModal(); } });
 }
 
 function buildShell(){
-  byId("sidebarNav").innerHTML = VIEWS.map(v=>`<button class="navbtn" data-view="${v.key}">${escapeHtml(v.label)}</button>`).join("");
-  document.querySelectorAll(".navbtn").forEach(b=>b.addEventListener("click", ()=>switchView(b.getAttribute("data-view"))));
+  byId("sidebarNav").innerHTML = `
+    <button class="navbtn" id="sidebarCollapseBtn" title="Collapse sidebar">
+      <svg class="navicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 4 6.5 10l6 6"/></svg>
+      <span class="navlabel">Collapse</span>
+    </button>
+    ${VIEWS.map(v=>`<button class="navbtn" data-view="${v.key}" title="${escapeHtml(v.label)}">${viewIconSvg(v.key)}<span class="navlabel">${escapeHtml(v.label)}</span></button>`).join("")}
+  `;
+  document.querySelectorAll(".navbtn[data-view]").forEach(b=>b.addEventListener("click", ()=>switchView(b.getAttribute("data-view"))));
+  byId("sidebarCollapseBtn").addEventListener("click", ()=>setSidebarCollapsed(!sidebarCollapsed));
   byId("mainViews").innerHTML = VIEWS.map(v=>`<div class="view" id="view-${v.key}"></div>`).join("");
 }
 
@@ -3422,6 +4085,7 @@ function init(){
   buildShell();
   wireGlobalEvents();
   renderTopbarLegendPill();
+  setSidebarCollapsed(sidebarCollapsed);
   initAccountSystem();
   switchView("database");
 }
