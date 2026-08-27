@@ -361,22 +361,46 @@ table tr:hover td{ background:var(--surface-2); }
 }
 .compact-item:hover .deck-stepper-row{ opacity:1; pointer-events:auto; }
 
-/* ---------- Draw-chance calculator: per-card trash/library panel ---------- */
-.statcard-list{ display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto; }
-.statcard-row{ display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; cursor:pointer; }
-.statcard-row:hover{ background:var(--surface-2); }
-.statcard-thumb{ width:28px; height:38px; flex:none; border-radius:5px; overflow:hidden; position:relative; background:linear-gradient(160deg, var(--c1), var(--c2)); }
-.statcard-thumb img{ display:block; width:100%; height:100%; object-fit:cover; object-position:top center; }
-.statcard-name{ flex:1; min-width:0; font-size:.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.statcard-qty{ font-family:var(--font-mono); font-size:.7rem; color:var(--ink-muted); flex:none; }
-.statcard-trash{ display:flex; align-items:center; gap:4px; flex:none; }
-.statcard-trash button{ width:20px; height:20px; padding:0; border-radius:5px; border:1px solid var(--hair-strong); background:var(--surface); color:var(--ink); font-weight:700; font-size:.72rem; cursor:pointer; line-height:1; }
-.statcard-trash button:hover{ background:var(--surface-2); }
-.statcard-trash .n{ width:16px; text-align:center; font-family:var(--font-mono); font-size:.72rem; font-weight:700; }
+/* ---------- Draw-chance calculator: Library/Hand/In Play/Trash zone board ----------
+   No inline art thumbnail anywhere here by design — the existing global
+   card hover-preview (data-decklist-card-id) shows a large image on hover
+   instead, so rows stay compact. */
+.zone-board{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.zone-col{ display:flex; flex-direction:column; min-width:0; background:var(--surface-2); border-radius:10px; overflow:hidden; }
+.zone-col-head{
+  display:flex; justify-content:space-between; align-items:center; padding:6px 9px; font-size:.68rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:.04em; color:var(--ink-2); background:var(--surface-3); flex:none;
+}
+.zone-col-body{ display:flex; flex-direction:column; gap:3px; padding:6px; min-height:60px; max-height:280px; overflow-y:auto; transition:background-color .12s ease; }
+.zone-col-body.drop-hover{ background:var(--accent-soft); }
+.zone-row{
+  display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:7px; background:var(--surface); cursor:grab;
+  box-shadow:var(--shadow-1); font-size:.74rem;
+}
+.zone-row:active{ cursor:grabbing; }
+.zone-row.dragging{ opacity:.4; }
+.zone-row-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.zone-row-qty{ font-family:var(--font-mono); font-size:.7rem; color:var(--ink-muted); flex:none; }
+.zone-row-actions{ display:flex; gap:3px; flex:none; }
+.zone-row-actions button{
+  padding:1px 6px; border-radius:5px; border:1px solid var(--hair-strong); background:var(--surface); color:var(--ink);
+  font-weight:700; font-size:.66rem; cursor:pointer; line-height:1.6;
+}
+.zone-row-actions button:hover{ background:var(--surface-2); }
+.zone-row-actions button.btn.ghost{ border-color:transparent; background:transparent; }
+@media (max-width: 760px){ .zone-board{ grid-template-columns:repeat(2,1fr); } }
+
 .libctl{ display:inline-flex; align-items:center; gap:4px; }
 .libctl button{ width:22px; height:22px; padding:0; border-radius:6px; border:1px solid var(--hair-strong); background:var(--surface); color:var(--ink); font-weight:700; cursor:pointer; }
 .libctl button:hover{ background:var(--surface-2); }
 .libctl input[type=number]{ width:56px; text-align:center; padding:4px 2px; }
+
+/* ---------- Cost curve: type-breakdown inner bar + count gridlines ---------- */
+.curve-plot-wrap{ position:relative; }
+.curve-grid{ position:absolute; left:0; right:28px; bottom:22px; height:90px; pointer-events:none; }
+.curve-grid-line{ position:absolute; left:0; right:0; border-top:1px dashed var(--hair); }
+.curve-grid-line span{ position:absolute; right:0; top:-8px; transform:translateY(-100%); font-size:.6rem; font-family:var(--font-mono); color:var(--ink-muted); }
+.curve .bar-inner{ position:absolute; left:50%; bottom:0; transform:translateX(-50%); width:55%; border-radius:4px 4px 2px 2px; background:var(--focus); }
 
 /* ---------- tabs ---------- */
 .subtabs{ display:flex; gap:4px; border-bottom:1px solid var(--hair); margin-bottom:16px; }
@@ -1410,6 +1434,19 @@ function energyCurve(items){
   }
   return buckets;
 }
+/* Same buckets as energyCurve(), but only counting cards whose type is in
+   `types` (a Set) — feeds the Cost Curve chart's inner breakdown bar. */
+function energyCurveByType(items, types){
+  const buckets = {0:0,1:0,2:0,3:0,4:0,5:0,6:0,"7+":0};
+  for(const x of items){
+    if(!types || !types.has(x.card.type)) continue;
+    const e = x.card.energy;
+    if(e==null) continue;
+    const key = e>=7 ? "7+" : String(e);
+    buckets[key] = (buckets[key]||0) + x.count;
+  }
+  return buckets;
+}
 
 function mechanicCounts(items){
   const out = {};
@@ -1478,18 +1515,17 @@ function categoryDrawSeries(deck, cardIds, maxTurn, onPlay, atLeastK){
 }
 
 /* Same as categoryDrawSeries, but for the draw-chance calculator's "what if
-   some copies are already gone" simulation: the population (library size)
-   is overridable rather than always the full main-deck count, and per-card
-   trash counts shrink both the population and — for cards belonging to
-   this particular category — the successes. trashMap is {cardId: count}. */
-function categoryDrawSeriesAdjusted(deck, cardIds, maxTurn, onPlay, atLeastK, libSize, trashMap){
-  trashMap = trashMap || {};
+   some copies have already left the library" simulation: the population
+   (library size) is overridable rather than always the full main-deck
+   count, and the successes are read from a precomputed "copies still in
+   the library" map (see statsInLibrary() in part8_view_stats.js) instead
+   of the raw deck count — so cards moved to Hand/Play/Trash by the zone
+   board stop counting as still-drawable, exactly like cards that never
+   left but the library itself shrank. remainingMap is {cardId: count}. */
+function categoryDrawSeriesAdjusted(cardIds, maxTurn, onPlay, atLeastK, libSize, remainingMap){
+  remainingMap = remainingMap || {};
   let K = 0;
-  for(const id of cardIds){
-    const have = deck.main[id]||0;
-    const trashed = Math.min(have, trashMap[id]||0);
-    K += have - trashed;
-  }
+  for(const id of cardIds) K += Math.max(0, remainingMap[id]||0);
   const N = Math.max(K, Math.round(libSize)||0); // population can't be smaller than the successes still in it
   const out = [];
   for(let T=0; T<=maxTurn; T++){
@@ -2786,9 +2822,11 @@ const DRAW_CHART_COLORS = ["var(--focus)","var(--dom-fury)","var(--dom-body)","v
 /* ===================== VIEW: STATS ===================== */
 const statsState = {
   catMode:"mechanic", mechKeys:new Set(["removal"]), cardIds:new Set(), onPlay:true, atLeastK:1,
+  typeFilter:new Set(["Unit","Spell","Gear"]), // restricts which cards the calculator (and its zone board) considers
+  curveTypeFilter:new Set(["Unit"]),           // separate: which type(s) the Cost Curve's inner breakdown bar sums
   libSize:null,       // null = auto-track the deck's actual main-deck count; a number once the user overrides it
   abstractTrash:0,    // untracked "some cards already left the library" count — shrinks the population only
-  cardTrash:{},        // {cardId: copiesAlreadyInTrash} — shrinks both the population and this card's own successes
+  zones:{},           // {cardId: {hand, play, trash}} — copies moved out of the library by the zone-board simulation
 };
 /* Only offer mechanics actually present in the active deck, so the chip row
    stays short and relevant instead of listing all ~25 tags in the catalogue. */
@@ -2798,39 +2836,120 @@ function mechanicOptionsForDeck(items){
   return Object.entries(MECH_META).filter(([k])=>counts[k]).sort((a,b)=>counts[b[0]]-counts[a[0]]).map(([k,v])=>[k,v,counts[k]]);
 }
 
-/* ---- library-size / trash "what if" simulation state (draw-chance calc) ---- */
+/* ---- library-size / zone-board "what if" simulation state (draw-chance calc) ----
+   Cards move Library → Hand → (Play or Trash) → Trash, mirroring an actual game's
+   zones. Library counts are never stored directly — they're always derived as
+   "deck count minus whatever's been moved elsewhere" so the two can never drift
+   out of sync. */
 function statsLibSize(deck){
   if(statsState.libSize==null) statsState.libSize = deckMainCount(deck);
   return statsState.libSize;
 }
-function statsTrashedTotal(){ return Object.values(statsState.cardTrash).reduce((a,b)=>a+b,0); }
-function statsEffectiveLibSize(deck){
-  return Math.max(0, statsLibSize(deck) - (statsState.abstractTrash||0) - statsTrashedTotal());
+function statsZone(id){ return statsState.zones[id] || (statsState.zones[id]={hand:0,play:0,trash:0}); }
+function statsZoneRO(id){ return statsState.zones[id] || {hand:0,play:0,trash:0}; }
+function statsInLibrary(deck, id){
+  const have = deck.main[id]||0;
+  const z = statsZoneRO(id);
+  return Math.max(0, have - z.hand - z.play - z.trash);
 }
-/* Drop stale per-card trash entries (card no longer in the deck) and clamp
-   the rest to the card's current count, so switching decks or editing the
-   decklist elsewhere can't leave the simulation referencing phantom cards. */
-function statsPruneTrash(items){
+function statsMovedTotal(){
+  let sum=0; for(const id of Object.keys(statsState.zones)){ const z=statsState.zones[id]; sum += z.hand+z.play+z.trash; }
+  return sum;
+}
+function statsEffectiveLibSize(deck){
+  return Math.max(0, statsLibSize(deck) - (statsState.abstractTrash||0) - statsMovedTotal());
+}
+/* Drop stale zone entries (card no longer in the deck) and clamp the rest to
+   the card's current count — draining trash first, then play, then hand —
+   so switching decks or editing the decklist elsewhere can't leave the
+   simulation referencing phantom copies. */
+function statsPruneZones(items){
   const counts = {}; for(const x of items) counts[x.card.id]=x.count;
-  for(const id of Object.keys(statsState.cardTrash)){
-    if(!counts[id]){ delete statsState.cardTrash[id]; continue; }
-    if(statsState.cardTrash[id] > counts[id]) statsState.cardTrash[id] = counts[id];
-    if(statsState.cardTrash[id] <= 0) delete statsState.cardTrash[id];
+  for(const id of Object.keys(statsState.zones)){
+    if(!counts[id]){ delete statsState.zones[id]; continue; }
+    const z = statsState.zones[id];
+    let excess = (z.hand+z.play+z.trash) - counts[id];
+    for(const key of ["trash","play","hand"]){
+      if(excess<=0) break;
+      const drain = Math.min(excess, z[key]);
+      z[key] -= drain; excess -= drain;
+    }
+    if(z.hand<=0 && z.play<=0 && z.trash<=0) delete statsState.zones[id];
   }
 }
-/* Union of deck items matching the calculator's current category
-   selection — the card list shown next to the chart. */
+/* Only these zone pairs can trade cards directly — a card must pass through
+   Hand to reach Play or Trash from the Library, matching how the game
+   actually flows (and how the drag targets / move buttons are offered). */
+const STATS_ZONE_ADJ = [["library","hand"],["hand","play"],["hand","trash"],["play","trash"]];
+function statsZonesAdjacent(a,b){ return STATS_ZONE_ADJ.some(p=>(p[0]===a&&p[1]===b)||(p[0]===b&&p[1]===a)); }
+function statsMoveCard(deck, id, from, to, n){
+  n = n||1;
+  if(from===to || !statsZonesAdjacent(from,to)) return false;
+  const z = statsZone(id);
+  const avail = from==="library" ? statsInLibrary(deck,id) : z[from];
+  const move = Math.min(n, avail);
+  if(move<=0) return false;
+  if(from!=="library") z[from] -= move;
+  if(to!=="library") z[to] = (z[to]||0) + move;
+  return true;
+}
+/* Draws one random copy (weighted by remaining-in-library count) from among
+   the cards currently in the calculator's selection — Library → Hand. */
+function statsDrawRandom(deck, sel){
+  const pool = [];
+  for(const x of sel){ const n = statsInLibrary(deck, x.card.id); for(let i=0;i<n;i++) pool.push(x.card.id); }
+  if(!pool.length) return false;
+  const id = pool[Math.floor(Math.random()*pool.length)];
+  return statsMoveCard(deck, id, "library", "hand", 1);
+}
+/* Union of deck items matching the calculator's current category selection
+   AND the type filter — the pool the zone board and chart both draw from. */
 function statsSelectionItems(items){
+  let sel;
   if(statsState.catMode==="mechanic"){
     if(!statsState.mechKeys.size) return [];
-    return items.filter(x=>(x.card.mech||[]).some(m=>statsState.mechKeys.has(m)));
+    sel = items.filter(x=>(x.card.mech||[]).some(m=>statsState.mechKeys.has(m)));
+  } else {
+    sel = items.filter(x=>statsState.cardIds.has(x.card.id));
   }
-  return items.filter(x=>statsState.cardIds.has(x.card.id));
+  return sel.filter(x=>statsState.typeFilter.has(x.card.type));
 }
 function resetStatsSimulation(){
   statsState.libSize = null;
   statsState.abstractTrash = 0;
-  statsState.cardTrash = {};
+  statsState.zones = {};
+}
+
+/* ---- Cost curve: total bar + a narrower inner bar breaking out the
+   checked type(s), plus dashed count gridlines so bar heights are easy to
+   read at a glance without hunting for the number label. ---- */
+function curveGridStep(maxV){
+  if(maxV<=6) return 1;
+  if(maxV<=14) return 2;
+  if(maxV<=30) return 4;
+  return Math.ceil(maxV/8/2)*2;
+}
+function costCurveChartHtml(items){
+  const curve = energyCurve(items);
+  const maxV = Math.max(1, ...Object.values(curve));
+  const typeCurve = energyCurveByType(items, statsState.curveTypeFilter);
+  const step = curveGridStep(maxV);
+  const gridVals = [];
+  for(let g=step; g<maxV; g+=step) gridVals.push(g);
+  const gridHtml = gridVals.map(g=>`<div class="curve-grid-line" style="bottom:${((g/maxV)*90).toFixed(1)}px;"><span>${g}</span></div>`).join("");
+  const typeLabel = [...statsState.curveTypeFilter].map(t=>TYPE_LABEL[t]||t).join("/") || "nothing selected";
+  const cols = Object.entries(curve).map(([k,v])=>{
+    const outerH = v ? Math.max(4,(v/maxV)*90) : 2;
+    const innerV = typeCurve[k]||0;
+    const innerH = innerV ? Math.max(3,(innerV/maxV)*90) : 0;
+    return `
+    <div class="colwrap">
+      <div class="n">${v||""}</div>
+      <div class="bar" style="height:${outerH}px;" title="${v} card(s) at cost ${k}${innerV?`, ${innerV} ${escapeHtml(typeLabel)}`:""}">${innerH?`<div class="bar-inner" style="height:${innerH}px;"></div>`:""}</div>
+      <div class="x">${k}</div>
+    </div>`;
+  }).join("");
+  return `<div class="curve-plot-wrap"><div class="curve-grid">${gridHtml}</div><div class="curve">${cols}</div></div>`;
 }
 
 function renderStatsView(){
@@ -2838,7 +2957,7 @@ function renderStatsView(){
   const deck = activeDeck();
   const legend = deckLegend(deck);
   const items = deckMainCards(deck);
-  statsPruneTrash(items);
+  statsPruneZones(items);
   const mainCount = deckMainCount(deck) || 1;
   const power = deckPowerBreakdown(deck);
   const curve = energyCurve(items);
@@ -2867,11 +2986,14 @@ function renderStatsView(){
 
     <div class="row wrap" style="gap:16px;align-items:flex-start;">
       <div class="card-surface pad" style="flex:1;min-width:320px;">
-        <h3>Cost curve</h3>
-        <div class="curve">${Object.entries(curve).map(([k,v])=>`
-          <div class="colwrap"><div class="n">${v||""}</div><div class="bar" style="height:${curve[k]?Math.max(4,(v/Math.max(1,...Object.values(curve)))*90):2}px"></div><div class="x">${k}</div></div>`).join("")}
+        <div class="spread" style="align-items:center;">
+          <h3 style="margin:0;">Cost curve</h3>
+          <div class="row wrap" id="curveTypeChips" style="gap:4px;">
+            ${["Unit","Spell","Gear"].map(t=>`<span class="chip clickable ${statsState.curveTypeFilter.has(t)?"on":""}" data-toggle-curve-type="${t}">${TYPE_LABEL[t]||t}</span>`).join("")}
+          </div>
         </div>
-        <p class="hint">Distribution of Energy cost among Units/Spells/Gear in the main deck.</p>
+        <div id="costCurveBox">${costCurveChartHtml(items)}</div>
+        <p class="hint">Distribution of Energy cost among Units/Spells/Gear in the main deck. The highlighted inner bar breaks out the checked type(s); dashed lines mark every ${curveGridStep(Math.max(1,...Object.values(curve)))} cards.</p>
       </div>
       <div class="card-surface pad" style="flex:1;min-width:320px;">
         <h3>Mechanic density</h3>
@@ -2891,7 +3013,7 @@ function renderStatsView(){
 
     <hr class="hair">
     <h3>Draw chance calculator</h3>
-    <p class="hint">Probability of having drawn at least K cards of a given category by a given turn, computed hypergeometrically from your actual deck (mulligan not accounted for). Check multiple mechanics (or cards) to compare them as separate lines on the same chart. Use the trash/library controls below to simulate mid-game states — copies already drawn, discarded, or milled.</p>
+    <p class="hint">Probability of having drawn at least K cards of a given category by a given turn, computed hypergeometrically from your actual deck (mulligan not accounted for). Check multiple mechanics (or cards) to compare them as separate lines on the same chart. Use the board below to simulate mid-game states — draw cards into your hand, play them, or trash them — and the chart updates to reflect what's actually still left in your library.</p>
     <div class="card-surface pad">
       <div class="row wrap" style="gap:10px;margin-bottom:10px;align-items:flex-start;">
         <select id="statCatMode">
@@ -2899,11 +3021,15 @@ function renderStatsView(){
           <option value="card" ${statsState.catMode==='card'?'selected':''}>Specific card</option>
         </select>
         <div class="row wrap" id="statMechChips" style="gap:5px;max-width:560px;${statsState.catMode==='card'?'display:none':''}">
-          ${mechanicOptionsForDeck(items).map(([k,v,n])=>`<span class="chip clickable ${statsState.mechKeys.has(k)?'on':''}" data-toggle-mech="${k}">${v.label} (${n})</span>`).join("") || '<span class="hint">No tagged mechanics in the deck yet.</span>'}
+          ${mechanicOptionsForDeck(items.filter(x=>statsState.typeFilter.has(x.card.type))).map(([k,v,n])=>`<span class="chip clickable ${statsState.mechKeys.has(k)?'on':''}" data-toggle-mech="${k}">${v.label} (${n})</span>`).join("") || '<span class="hint">No tagged mechanics in the deck yet.</span>'}
         </div>
-        <select id="statCardKey" multiple size="4" style="min-width:220px;${statsState.catMode==='mechanic'?'display:none':''}">${items.map(x=>`<option value="${x.card.id}" ${statsState.cardIds.has(x.card.id)?'selected':''}>${escapeHtml(x.card.name)} (${x.count})</option>`).join("") || '<option disabled>No cards in the deck</option>'}</select>
+        <select id="statCardKey" multiple size="4" style="min-width:220px;${statsState.catMode==='mechanic'?'display:none':''}">${items.filter(x=>statsState.typeFilter.has(x.card.type)).map(x=>`<option value="${x.card.id}" ${statsState.cardIds.has(x.card.id)?'selected':''}>${escapeHtml(x.card.name)} (${x.count})</option>`).join("") || '<option disabled>No cards in the deck</option>'}</select>
         <label class="row" style="gap:6px;"><input type="checkbox" id="statOnPlay" ${statsState.onPlay?"checked":""}> On the play (goes first)</label>
         <label class="row" style="gap:6px;">At least <input type="number" id="statK" min="1" max="9" value="${statsState.atLeastK}" style="width:56px;"> copies</label>
+      </div>
+      <div class="row wrap" id="statTypeChips" style="gap:5px;margin-bottom:10px;align-items:center;">
+        <span class="hint" style="margin-right:2px;">Type:</span>
+        ${["Unit","Spell","Gear"].map(t=>`<span class="chip clickable ${statsState.typeFilter.has(t)?"on":""}" data-toggle-stat-type="${t}">${TYPE_LABEL[t]||t}</span>`).join("")}
       </div>
       <div class="row wrap" style="gap:16px;margin-bottom:12px;align-items:center;padding:8px 10px;background:var(--surface-2);border-radius:8px;">
         <div class="libctl">
@@ -2919,15 +3045,12 @@ function renderStatsView(){
           <button id="statAbsAdd" title="+1">+</button>
         </div>
         <span class="hint">Effective library: <strong class="tabular" id="statEffLib">${statsEffectiveLibSize(deck)}</strong> cards</span>
+        <button class="btn small" id="statDrawRandom" title="Draw one random card (from the current selection) into your Hand">🎲 Draw random</button>
         <button class="btn ghost small" id="statResetSim">Reset simulation</button>
       </div>
-      <div class="row wrap" style="gap:16px;align-items:flex-start;">
-        <div id="drawChanceChart" style="flex:1.4;min-width:280px;"></div>
-        <div style="flex:1;min-width:260px;">
-          <div class="hint" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.64rem;margin-bottom:4px;">Cards in selection — mark copies already in the trash</div>
-          <div class="statcard-list" id="statCardList"></div>
-        </div>
-      </div>
+      <div id="drawChanceChart"></div>
+      <div class="hint" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.64rem;margin:14px 0 4px;">Cards in selection — drag between zones, or use each card's button. Hover a name for a preview; double-click to open the card.</div>
+      <div class="zone-board" id="statZoneBoard"></div>
     </div>
 
     <hr class="hair">
@@ -2937,7 +3060,7 @@ function renderStatsView(){
   `;
   wireStatsControls();
   renderDrawChanceChart();
-  renderStatCardList();
+  renderZoneBoard();
   renderImpactChart();
   byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); resetStatsSimulation(); renderStatsView(); });
   const nb=byId("btnNewDeck"); if(nb) nb.addEventListener("click", ()=>{ const d=blankDeck("New deck "+(STORE.decks.length+1)); STORE.decks.push(d); STORE.activeId=d.id; saveStore(); renderStatsView(); });
@@ -2953,16 +3076,27 @@ function wireStatsControls(){
     if(statsState.mechKeys.has(k)) statsState.mechKeys.delete(k); else statsState.mechKeys.add(k);
     chip.classList.toggle("on", statsState.mechKeys.has(k));
     renderDrawChanceChart();
-    renderStatCardList();
+    renderZoneBoard();
   }));
   const ck = byId("statCardKey");
   if(ck) ck.addEventListener("change", e=>{
     statsState.cardIds = new Set([...e.target.selectedOptions].map(o=>o.value));
     renderDrawChanceChart();
-    renderStatCardList();
+    renderZoneBoard();
   });
   byId("statOnPlay").addEventListener("change", e=>{ statsState.onPlay=e.target.checked; renderDrawChanceChart(); });
   byId("statK").addEventListener("input", debounce(e=>{ statsState.atLeastK=Math.max(1,parseInt(e.target.value)||1); renderDrawChanceChart(); },200));
+  byId("statTypeChips").querySelectorAll("[data-toggle-stat-type]").forEach(chip=>chip.addEventListener("click", ()=>{
+    const t = chip.getAttribute("data-toggle-stat-type");
+    if(statsState.typeFilter.has(t)) statsState.typeFilter.delete(t); else statsState.typeFilter.add(t);
+    renderStatsView(); // type filter changes which cards even show up as mechanic-chip/card-select options
+  }));
+  byId("curveTypeChips").querySelectorAll("[data-toggle-curve-type]").forEach(chip=>chip.addEventListener("click", ()=>{
+    const t = chip.getAttribute("data-toggle-curve-type");
+    if(statsState.curveTypeFilter.has(t)) statsState.curveTypeFilter.delete(t); else statsState.curveTypeFilter.add(t);
+    chip.classList.toggle("on", statsState.curveTypeFilter.has(t));
+    byId("costCurveBox").innerHTML = costCurveChartHtml(deckMainCards(activeDeck()));
+  }));
 
   const deck = activeDeck();
   const libInput = byId("statLibSize");
@@ -2973,76 +3107,116 @@ function wireStatsControls(){
   absInput.addEventListener("input", debounce(e=>{ statsState.abstractTrash=Math.max(0,parseInt(e.target.value,10)||0); refreshDrawCalc(); },200));
   byId("statAbsSub").addEventListener("click", ()=>{ statsState.abstractTrash=Math.max(0,(statsState.abstractTrash||0)-1); absInput.value=statsState.abstractTrash; refreshDrawCalc(); });
   byId("statAbsAdd").addEventListener("click", ()=>{ statsState.abstractTrash=(statsState.abstractTrash||0)+1; absInput.value=statsState.abstractTrash; refreshDrawCalc(); });
+  byId("statDrawRandom").addEventListener("click", ()=>{
+    const items = deckMainCards(deck);
+    const sel = statsSelectionItems(items);
+    if(statsDrawRandom(deck, sel)) refreshDrawCalc();
+  });
   byId("statResetSim").addEventListener("click", ()=>{ resetStatsSimulation(); renderStatsView(); });
 }
 
 /* Refreshes just the parts of the draw-chance calculator that depend on the
-   library-size/trash simulation, without rebuilding the whole Stats view —
-   keeps focus in the number inputs while the user is typing. */
+   library-size/zone-board simulation, without rebuilding the whole Stats
+   view — keeps focus in the number inputs while the user is typing. */
 function refreshDrawCalc(){
   const deck = activeDeck();
   const effEl = byId("statEffLib");
   if(effEl) effEl.textContent = statsEffectiveLibSize(deck);
   renderDrawChanceChart();
-  renderStatCardList();
+  renderZoneBoard();
 }
 
-/* Card list next to the chart: every deck card matching the current
-   category selection, with a per-card "copies already in the trash"
-   stepper. Hovering a row uses the existing global card hover-preview
-   (data-decklist-card-id, see part11_boot.js) to show a large card image;
-   double-clicking opens the same card detail modal the deck lists use. */
-function renderStatCardList(){
-  const box = byId("statCardList");
-  if(!box) return;
+/* ---- zone board: Library / Hand / In Play / Trash ----
+   Every card in the calculator's current selection, grouped into the zone
+   it's currently in. No inline art thumbnail here on purpose — hovering a
+   row uses the existing global card hover-preview (data-decklist-card-id,
+   see part11_boot.js) to show a large image on demand instead; double-
+   clicking opens the full card modal, same as the deck lists. Cards can be
+   moved between adjacent zones either by dragging a row onto another
+   column, or with each row's own button. */
+const STATS_ZONE_DEFS = [
+  { key:"library", label:"Library" },
+  { key:"hand",    label:"Hand" },
+  { key:"play",    label:"In Play" },
+  { key:"trash",   label:"Trash" },
+];
+function statsZoneCount(deck, id, zoneKey){
+  return zoneKey==="library" ? statsInLibrary(deck, id) : statsZoneRO(id)[zoneKey];
+}
+function zoneRowHtml(card, count, zoneKey){
+  let actions = "";
+  if(zoneKey==="library"){
+    actions = `<button class="btn small" data-zone-move="${card.id}|library|hand" title="Draw this card into your Hand">Draw →</button>`;
+  } else if(zoneKey==="hand"){
+    const dest = card.type==="Spell" ? "trash" : "play";
+    actions = `<button class="btn small" data-zone-move="${card.id}|hand|${dest}" title="${dest==='play'?'Play — stays In Play':'Play — a Spell resolves and goes to Trash'}">▶ Play</button>
+               <button class="btn small ghost" data-zone-move="${card.id}|hand|trash" title="Discard without playing">🗑</button>`;
+  } else if(zoneKey==="play"){
+    actions = `<button class="btn small ghost" data-zone-move="${card.id}|play|trash" title="Send to Trash">🗑</button>`;
+  }
+  return `
+  <div class="zone-row" draggable="true" data-decklist-card-id="${card.id}" data-stat-open-id="${card.id}" data-zone-card="${card.id}" data-zone-from="${zoneKey}">
+    <span class="zone-row-name">${escapeHtml(card.name)}</span>
+    <span class="zone-row-qty">×${count}</span>
+    <div class="zone-row-actions">${actions}</div>
+  </div>`;
+}
+function renderZoneBoard(){
+  const board = byId("statZoneBoard");
+  if(!board) return;
   const deck = activeDeck();
   const items = deckMainCards(deck);
   const sel = statsSelectionItems(items).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
   if(!sel.length){
-    box.innerHTML = `<p class="hint">${statsState.catMode==='mechanic'?'Check at least one mechanic above':'Select at least one card above'} to list its cards here.</p>`;
+    board.innerHTML = `<p class="hint">${statsState.catMode==='mechanic'?'Check at least one mechanic above':'Select at least one card above'} to see it here.</p>`;
     return;
   }
-  box.innerHTML = sel.map(x=>{
-    const [c1,c2] = cardMainDomainColorPair(x.card);
-    const trash = statsState.cardTrash[x.card.id]||0;
-    const thumb = `<div class="statcard-thumb" style="--c1:${c1};--c2:${c2}">${x.card.img?`<img src="${x.card.img}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:""}</div>`;
+  board.innerHTML = STATS_ZONE_DEFS.map(z=>{
+    const rows = sel.filter(x=>statsZoneCount(deck,x.card.id,z.key)>0);
+    const total = rows.reduce((a,x)=>a+statsZoneCount(deck,x.card.id,z.key),0);
     return `
-    <div class="statcard-row" data-decklist-card-id="${x.card.id}" data-stat-open-id="${x.card.id}">
-      ${thumb}
-      <span class="statcard-name">${escapeHtml(x.card.name)}</span>
-      <span class="statcard-qty">×${x.count}</span>
-      <div class="statcard-trash" title="Copies of this card already in the trash">
-        <button data-trash-sub="${x.card.id}">−</button>
-        <span class="n">${trash}</span>
-        <button data-trash-add="${x.card.id}">+</button>
+    <div class="zone-col">
+      <div class="zone-col-head"><span>${z.label}</span><span class="tabular">${total}</span></div>
+      <div class="zone-col-body" data-zone-drop="${z.key}">
+        ${rows.map(x=>zoneRowHtml(x.card, statsZoneCount(deck,x.card.id,z.key), z.key)).join("") || '<p class="hint" style="padding:4px 6px;">—</p>'}
       </div>
     </div>`;
   }).join("");
-  box.querySelectorAll("[data-trash-sub]").forEach(b=>b.addEventListener("click", e=>{
+  wireZoneBoard(board);
+}
+function wireZoneBoard(board){
+  const deck = activeDeck();
+  board.querySelectorAll("[data-zone-move]").forEach(b=>b.addEventListener("click", e=>{
     e.stopPropagation();
-    const id = b.getAttribute("data-trash-sub");
-    statsState.cardTrash[id] = Math.max(0,(statsState.cardTrash[id]||0)-1);
-    if(!statsState.cardTrash[id]) delete statsState.cardTrash[id];
-    const effEl = byId("statEffLib"); if(effEl) effEl.textContent = statsEffectiveLibSize(deck);
-    renderDrawChanceChart();
-    renderStatCardList();
+    const [id,from,to] = b.getAttribute("data-zone-move").split("|");
+    if(statsMoveCard(deck,id,from,to,1)) refreshDrawCalc();
   }));
-  box.querySelectorAll("[data-trash-add]").forEach(b=>b.addEventListener("click", e=>{
-    e.stopPropagation();
-    const id = b.getAttribute("data-trash-add");
-    const it = items.find(x=>x.card.id===id);
-    const max = it?it.count:0;
-    statsState.cardTrash[id] = Math.min(max,(statsState.cardTrash[id]||0)+1);
-    const effEl = byId("statEffLib"); if(effEl) effEl.textContent = statsEffectiveLibSize(deck);
-    renderDrawChanceChart();
-    renderStatCardList();
-  }));
-  box.querySelectorAll("[data-stat-open-id]").forEach(row=>row.addEventListener("dblclick", ()=>openCardModal(row.getAttribute("data-stat-open-id"))));
+  board.querySelectorAll("[data-stat-open-id]").forEach(row=>row.addEventListener("dblclick", ()=>openCardModal(row.getAttribute("data-stat-open-id"))));
+  board.querySelectorAll(".zone-row[draggable]").forEach(row=>{
+    row.addEventListener("dragstart", e=>{
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", JSON.stringify({ id: row.getAttribute("data-zone-card"), from: row.getAttribute("data-zone-from") }));
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", ()=>row.classList.remove("dragging"));
+  });
+  board.querySelectorAll("[data-zone-drop]").forEach(col=>{
+    col.addEventListener("dragover", e=>{ e.preventDefault(); col.classList.add("drop-hover"); });
+    col.addEventListener("dragleave", ()=>col.classList.remove("drop-hover"));
+    col.addEventListener("drop", e=>{
+      e.preventDefault();
+      col.classList.remove("drop-hover");
+      let data; try{ data = JSON.parse(e.dataTransfer.getData("text/plain")); }catch(err){ return; }
+      if(!data || !data.id) return;
+      if(statsMoveCard(deck, data.id, data.from, col.getAttribute("data-zone-drop"), 1)) refreshDrawCalc();
+    });
+  });
 }
 
 function renderDrawChanceChart(){
   const deck = activeDeck();
   const items = deckMainCards(deck);
+  const calcItems = items.filter(x=>statsState.typeFilter.has(x.card.type));
   const box = byId("drawChanceChart");
   if(deckMainCount(deck)===0){ box.innerHTML = '<p class="hint">Add cards to the main deck to see draw chance.</p>'; return; }
 
@@ -3050,11 +3224,11 @@ function renderDrawChanceChart(){
   if(statsState.catMode==="mechanic"){
     seriesDefs = [...statsState.mechKeys].map(k=>({
       label: (MECH_META[k]&&MECH_META[k].label)||k,
-      ids: items.filter(x=>(x.card.mech||[]).includes(k)).map(x=>x.card.id),
+      ids: calcItems.filter(x=>(x.card.mech||[]).includes(k)).map(x=>x.card.id),
     }));
   } else {
     seriesDefs = [...statsState.cardIds].map(id=>{
-      const it = items.find(x=>x.card.id===id);
+      const it = calcItems.find(x=>x.card.id===id);
       return { label: it?it.card.name:id, ids: it?[id]:[] };
     });
   }
@@ -3066,10 +3240,11 @@ function renderDrawChanceChart(){
   }
 
   const effLib = statsEffectiveLibSize(deck);
+  const remainingMap = {}; for(const x of calcItems) remainingMap[x.card.id] = statsInLibrary(deck, x.card.id);
   const seriesList = seriesDefs.map((s,i)=>({
     label: s.label,
     color: DRAW_CHART_COLORS[i % DRAW_CHART_COLORS.length],
-    data: categoryDrawSeriesAdjusted(deck, s.ids, 10, statsState.onPlay, statsState.atLeastK, effLib, statsState.cardTrash).map(d=>({x:d.turn,y:d.p*100})),
+    data: categoryDrawSeriesAdjusted(s.ids, 10, statsState.onPlay, statsState.atLeastK, effLib, remainingMap).map(d=>({x:d.turn,y:d.p*100})),
   }));
 
   if(seriesList.length===1){
