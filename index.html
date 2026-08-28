@@ -151,6 +151,7 @@ button{ font-family:inherit; }
 .brand .mark{ width:26px; height:26px; display:block; }
 .topbar .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:16px; }
 .topbar .legend-pill{ display:flex; align-items:center; gap:8px; }
+.topbar .legend-pill select{ padding:4px 8px; font-size:.8rem; max-width:180px; }
 .topbar .account-pill{ display:flex; align-items:center; gap:8px; }
 .topbar .account-pill:empty{ display:none; }
 .topnav{ display:flex; align-items:center; gap:2px; overflow-x:auto; scrollbar-width:thin; }
@@ -395,12 +396,13 @@ table tr:hover td{ background:var(--surface-2); }
 .libctl button:hover{ background:var(--surface-2); }
 .libctl input[type=number]{ width:56px; text-align:center; padding:4px 2px; }
 
-/* ---------- Cost curve: type-breakdown inner bar + count gridlines ---------- */
+/* ---------- Cost curve: stacked type-breakdown segments + count gridlines ---------- */
 .curve-plot-wrap{ position:relative; }
 .curve-grid{ position:absolute; left:0; right:28px; bottom:22px; height:90px; pointer-events:none; }
 .curve-grid-line{ position:absolute; left:0; right:0; border-top:1px dashed var(--hair); }
 .curve-grid-line span{ position:absolute; right:0; top:-8px; transform:translateY(-100%); font-size:.6rem; font-family:var(--font-mono); color:var(--ink-muted); }
-.curve .bar-inner{ position:absolute; left:50%; bottom:0; transform:translateX(-50%); width:55%; border-radius:4px 4px 2px 2px; background:var(--focus); }
+.curve .bar-seg{ position:absolute; left:0; right:0; }
+.curve-type-dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; }
 
 /* ---------- tabs ---------- */
 .subtabs{ display:flex; gap:4px; border-bottom:1px solid var(--hair); margin-bottom:16px; }
@@ -431,7 +433,7 @@ table tr:hover td{ background:var(--surface-2); }
 .curve.compact .n{ font-size:.6rem; }
 .curve.compact .x{ font-size:.58rem; }
 .curve .colwrap{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end; }
-.curve .bar{ width:100%; border-radius:4px 4px 2px 2px; background:var(--accent); position:relative; min-height:2px; }
+.curve .bar{ width:100%; border-radius:4px 4px 2px 2px; background:var(--accent); position:relative; min-height:2px; overflow:hidden; }
 .curve .n{ font-family:var(--font-mono); font-size:.68rem; color:var(--ink-2); }
 .curve .x{ font-size:.66rem; color:var(--ink-muted); }
 
@@ -1447,6 +1449,24 @@ function energyCurveByType(items, types){
   }
   return buckets;
 }
+/* Per-bucket breakdown by type — e.g. bucket "5": {Unit:3, Spell:5, Gear:2}.
+   Only types present in `types` (a Set) are tallied at all, so a bucket's
+   total is exactly the sum of its included-type counts — feeds the Cost
+   Curve chart's stacked bar segments, one differently-colored segment per
+   type, always additive to the bucket total. */
+function energyCurveByTypeBreakdown(items, types){
+  const buckets = {};
+  for(const k of [0,1,2,3,4,5,6,"7+"]) buckets[k] = {Unit:0, Spell:0, Gear:0};
+  for(const x of items){
+    if(!types || !types.has(x.card.type)) continue;
+    const e = x.card.energy;
+    if(e==null) continue;
+    const key = e>=7 ? "7+" : String(e);
+    const b = buckets[key] || (buckets[key]={Unit:0,Spell:0,Gear:0});
+    b[x.card.type] = (b[x.card.type]||0) + x.count;
+  }
+  return buckets;
+}
 
 function mechanicCounts(items){
   const out = {};
@@ -2160,9 +2180,10 @@ function renderBuilderView(){
       <div style="flex:1;min-width:300px;">
         <div class="card-surface pad">
           <h3>Status</h3>
-          ${legend?`<div class="row" style="margin-bottom:8px;">${miniCardHtml(legend,{small:true})}<div style="margin-left:8px;">${(legend.domain||[]).map(d=>domainChip(d)).join(" ")}</div></div>`:'<p class="hint">No Legend selected yet.</p>'}
+          ${legend?`<div class="row" style="margin-bottom:8px;align-items:flex-start;">${miniCardHtml(legend,{small:true})}<div style="margin-left:8px;flex:1;min-width:0;"><div>${(legend.domain||[]).map(d=>domainChip(d)).join(" ")}</div><div id="championBox"></div></div></div>`:'<p class="hint">No Legend selected yet.</p>'}
           <div id="legalityBox"></div>
           <div id="statusCurveBox" style="margin-top:8px;"></div>
+          <div id="battlefieldsBox" style="margin:8px 0;"></div>
           <hr class="hair">
           <div class="spread" style="align-items:center;">
             <h3 style="margin:0;">Your Main Deck (<span id="deckListCount">${deckMainCount(deck)}</span>)</h3>
@@ -2182,21 +2203,10 @@ function renderBuilderView(){
       </div>
     </div>
   `;
-  byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); renderBuilderView(); });
-  byId("btnNewDeck").addEventListener("click", ()=>{
-    const d = blankDeck("New deck "+(STORE.decks.length+1));
-    STORE.decks.push(d); STORE.activeId=d.id; builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); saveStore(); renderBuilderView();
-  });
-  byId("btnRenameDeck").addEventListener("click", ()=>{
-    const name = prompt("New name for the deck:", deck.name);
-    if(name){ deck.name=name; saveStore(); renderBuilderView(); }
-  });
-  byId("btnDeleteDeck").addEventListener("click", ()=>{
-    if(STORE.decks.length<=1){ alert("You must have at least one deck."); return; }
-    if(!confirm("Delete this deck permanently?")) return;
-    STORE.decks = STORE.decks.filter(d=>d.id!==deck.id);
-    STORE.activeId = STORE.decks[0].id; builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); saveStore(); renderBuilderView();
-  });
+  byId("deckPicker").addEventListener("change", e=>setActiveDeck(e.target.value));
+  byId("btnNewDeck").addEventListener("click", ()=>uiNewDeck());
+  byId("btnRenameDeck").addEventListener("click", ()=>uiRenameDeck(deck));
+  byId("btnDeleteDeck").addEventListener("click", ()=>uiDeleteDeck(deck));
   byId("btnExportDeck").addEventListener("click", ()=>downloadDecklistText(deck));
   root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click", ()=>{
     builderState.tab=b.getAttribute("data-tab");
@@ -2211,6 +2221,8 @@ function renderBuilderView(){
   }));
   renderLegality();
   renderStatusCurve();
+  renderChampionBox();
+  renderBattlefieldsBox();
   renderBuilderTabBody();
   renderZonePanel("main");
   renderZonePanel("side");
@@ -2232,6 +2244,86 @@ function renderStatusCurve(){
     <div class="curve compact">${Object.entries(curve).map(([k,v])=>`
       <div class="colwrap"><div class="n">${v||""}</div><div class="bar" style="height:${v?Math.max(3,(v/maxV)*54):2}px"></div><div class="x">${k}</div></div>`).join("")}
     </div>`;
+}
+
+/* ---- Champion picker: the game rule is "pick a Legend, then pick ONE
+   Champion-supertype Unit that matches it" (confirmed against the actual
+   Riftbound rules) — isChampionMatch()/deckLegalityReport() already know
+   this, they just had no UI to act on it. Lives in the Status card's
+   Legend row, in the space to the right of the domain chips. There's no
+   separate `championId` field on the deck — "the current champion" is
+   just whichever matching card is sitting in the main deck, so this stays
+   in sync automatically with direct edits to the decklist too. */
+function championOptionsForLegend(legend){
+  if(!legend) return [];
+  return CARDS.filter(c=>isChampionMatch(c, legend)).sort((a,b)=>a.name.localeCompare(b.name));
+}
+function currentChampionCard(deck, legend){
+  if(!legend) return null;
+  const hit = deckMainCards(deck).find(x=>isChampionMatch(x.card, legend));
+  return hit ? hit.card : null;
+}
+function championPickerHtml(deck, legend){
+  if(!legend) return "";
+  const options = championOptionsForLegend(legend);
+  if(!options.length) return `<div class="hint" style="margin-top:4px;">No Champion unit found for this Legend.</div>`;
+  const current = currentChampionCard(deck, legend);
+  return `
+  <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+    <span class="hint" style="white-space:nowrap;">Champion</span>
+    <select id="championSelect" style="max-width:100%;font-size:.78rem;">
+      <option value="">— choose your Champion —</option>
+      ${options.map(c=>`<option value="${c.id}" ${current&&current.id===c.id?"selected":""}>${escapeHtml(c.name)}</option>`).join("")}
+    </select>
+  </div>`;
+}
+function renderChampionBox(){
+  const box = byId("championBox");
+  if(!box) return;
+  const deck = activeDeck();
+  const legend = deckLegend(deck);
+  box.innerHTML = championPickerHtml(deck, legend);
+  const sel = byId("championSelect");
+  if(!sel) return;
+  sel.addEventListener("change", e=>{
+    const deck2 = activeDeck();
+    const legend2 = deckLegend(deck2);
+    const options = championOptionsForLegend(legend2);
+    // Only one Champion-matching card belongs in the deck at a time —
+    // swap out whichever one was there before.
+    for(const c of options){ if(c.id!==e.target.value && deck2.main[c.id]) delete deck2.main[c.id]; }
+    if(e.target.value && !deck2.main[e.target.value]) addToMain(deck2, e.target.value, 1);
+    touchDeck();
+    refreshBuilderAfterDeckChange();
+  });
+}
+
+/* ---- Battlefields sidebar: shows the up-to-3 battlefields currently in
+   the deck (picked over on the Battlefields tab) with a one-click remove,
+   so you don't have to switch tabs just to see or drop what's selected. */
+function battlefieldsBoxHtml(deck){
+  const bfCards = (deck.battlefields||[]).map(id=>CARD_BY_ID.get(id)).filter(Boolean);
+  return `
+  <div class="hint" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:.64rem;margin-bottom:4px;">Battlefields (${bfCards.length}/3)</div>
+  ${bfCards.length ? `<div class="row wrap" style="gap:6px;">${bfCards.map(c=>`
+    <div class="row" style="gap:4px;align-items:center;background:var(--surface-2);border-radius:8px;padding:3px 4px 3px 8px;cursor:pointer;" data-decklist-card-id="${c.id}" data-open-bf="${c.id}">
+      <span style="font-size:.78rem;">${escapeHtml(c.name)}</span>
+      <button class="btn small ghost" data-remove-bf="${c.id}" title="Remove battlefield" style="padding:1px 6px;">×</button>
+    </div>`).join("")}</div>`
+  : `<p class="hint">No battlefields selected yet — pick 3 from the Battlefields tab.</p>`}`;
+}
+function renderBattlefieldsBox(){
+  const box = byId("battlefieldsBox");
+  if(!box) return;
+  const deck = activeDeck();
+  box.innerHTML = battlefieldsBoxHtml(deck);
+  box.querySelectorAll("[data-remove-bf]").forEach(btn=>btn.addEventListener("click", e=>{
+    e.stopPropagation();
+    toggleBattlefield(activeDeck(), btn.getAttribute("data-remove-bf"));
+    refreshBuilderAfterDeckChange();
+    if(builderState.tab==="battlefields") renderBuilderTabBody();
+  }));
+  box.querySelectorAll("[data-open-bf]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-open-bf"))));
 }
 
 function renderLegality(){
@@ -2400,6 +2492,8 @@ function renderZoneSelectionBar(zone){
 function refreshBuilderAfterDeckChange(){
   renderLegality();
   renderStatusCurve();
+  renderChampionBox();
+  renderBattlefieldsBox();
   renderZonePanel("main");
   renderZonePanel("side");
   if(builderState.tab==="main" || builderState.tab==="sideboard") refreshPoolGrid();
@@ -2472,6 +2566,7 @@ function renderLegendGrid(deck){
     builderState.deckSelected = new Set();
     builderState.sideSelected = new Set();
     builderState.tab = "main"; // jump straight to building once a legend is picked
+    renderTopbarLegendPill(); // the topbar shows this deck's domain chips — refresh right away, not just on next deck switch
     renderBuilderView();
   }));
 }
@@ -2687,6 +2782,7 @@ function commitImport(preview){
   }
   saveStore();
   builderState.importText=""; builderState.importPreview=null; builderState.tab="main"; builderState.deckSelected=new Set(); builderState.sideSelected=new Set();
+  renderTopbarLegendPill();
   renderBuilderView();
 }
 
@@ -2823,7 +2919,7 @@ const DRAW_CHART_COLORS = ["var(--focus)","var(--dom-fury)","var(--dom-body)","v
 const statsState = {
   catMode:"mechanic", mechKeys:new Set(["removal"]), cardIds:new Set(), onPlay:true, atLeastK:1,
   typeFilter:new Set(["Unit","Spell","Gear"]), // restricts which cards the calculator (and its zone board) considers
-  curveTypeFilter:new Set(["Unit"]),           // separate: which type(s) the Cost Curve's inner breakdown bar sums
+  curveTypeFilter:new Set(["Unit","Spell","Gear"]), // separate: which type(s) the Cost Curve counts/stacks at all
   libSize:null,       // null = auto-track the deck's actual main-deck count; a number once the user overrides it
   abstractTrash:0,    // untracked "some cards already left the library" count — shrinks the population only
   zones:{},           // {cardId: {hand, play, trash}} — copies moved out of the library by the zone-board simulation
@@ -2920,9 +3016,13 @@ function resetStatsSimulation(){
   statsState.zones = {};
 }
 
-/* ---- Cost curve: total bar + a narrower inner bar breaking out the
-   checked type(s), plus dashed count gridlines so bar heights are easy to
-   read at a glance without hunting for the number label. ---- */
+/* ---- Cost curve: a true stacked bar per Energy cost — one differently
+   colored segment per checked card type (Unit/Spell/Gear), stacked bottom
+   to top so the segments always sum to the bucket's total height — plus
+   dashed count gridlines so bar heights are easy to read at a glance
+   without hunting for the number label. ---- */
+const CURVE_TYPE_ORDER = ["Unit","Spell","Gear"];
+const CURVE_TYPE_COLORS = { Unit:"var(--dom-body)", Spell:"var(--dom-mind)", Gear:"var(--dom-order)" };
 function curveGridStep(maxV){
   if(maxV<=6) return 1;
   if(maxV<=14) return 2;
@@ -2930,22 +3030,36 @@ function curveGridStep(maxV){
   return Math.ceil(maxV/8/2)*2;
 }
 function costCurveChartHtml(items){
-  const curve = energyCurve(items);
-  const maxV = Math.max(1, ...Object.values(curve));
-  const typeCurve = energyCurveByType(items, statsState.curveTypeFilter);
+  const breakdown = energyCurveByTypeBreakdown(items, statsState.curveTypeFilter);
+  const totals = {}; for(const k of Object.keys(breakdown)) totals[k] = CURVE_TYPE_ORDER.reduce((a,t)=>a+(breakdown[k][t]||0),0);
+  const maxV = Math.max(1, ...Object.values(totals));
   const step = curveGridStep(maxV);
   const gridVals = [];
   for(let g=step; g<maxV; g+=step) gridVals.push(g);
   const gridHtml = gridVals.map(g=>`<div class="curve-grid-line" style="bottom:${((g/maxV)*90).toFixed(1)}px;"><span>${g}</span></div>`).join("");
-  const typeLabel = [...statsState.curveTypeFilter].map(t=>TYPE_LABEL[t]||t).join("/") || "nothing selected";
-  const cols = Object.entries(curve).map(([k,v])=>{
+  const cols = Object.entries(breakdown).map(([k,byType])=>{
+    const v = totals[k];
     const outerH = v ? Math.max(4,(v/maxV)*90) : 2;
-    const innerV = typeCurve[k]||0;
-    const innerH = innerV ? Math.max(3,(innerV/maxV)*90) : 0;
+    const titleParts = CURVE_TYPE_ORDER.filter(t=>statsState.curveTypeFilter.has(t) && byType[t]).map(t=>`${byType[t]} ${TYPE_LABEL[t]||t}`);
+    const title = `${v} card(s) at cost ${k}${titleParts.length?` (${titleParts.join(", ")})`:""}`;
+    // Stack segments bottom-up in a fixed type order so the same type is
+    // always in the same visual position across every bucket. Segments are
+    // sized as a share of the bucket's OWN bar height (not of maxV
+    // directly) so they always sum exactly to outerH — no rounding drift,
+    // no overflow past the bar's top even when outerH gets floored up for
+    // a very short bar.
+    let acc = 0;
+    const segs = CURVE_TYPE_ORDER.filter(t=>statsState.curveTypeFilter.has(t) && byType[t]).map(t=>{
+      const n = byType[t];
+      const segH = (n/v)*outerH;
+      const bottom = acc;
+      acc += segH;
+      return `<div class="bar-seg" style="height:${segH}px;bottom:${bottom}px;background:${CURVE_TYPE_COLORS[t]};" title="${n} ${escapeHtml(TYPE_LABEL[t]||t)} at cost ${k}"></div>`;
+    }).join("");
     return `
     <div class="colwrap">
       <div class="n">${v||""}</div>
-      <div class="bar" style="height:${outerH}px;" title="${v} card(s) at cost ${k}${innerV?`, ${innerV} ${escapeHtml(typeLabel)}`:""}">${innerH?`<div class="bar-inner" style="height:${innerH}px;"></div>`:""}</div>
+      <div class="bar" style="height:${outerH}px;" title="${escapeHtml(title)}">${segs}</div>
       <div class="x">${k}</div>
     </div>`;
   }).join("");
@@ -2989,11 +3103,11 @@ function renderStatsView(){
         <div class="spread" style="align-items:center;">
           <h3 style="margin:0;">Cost curve</h3>
           <div class="row wrap" id="curveTypeChips" style="gap:4px;">
-            ${["Unit","Spell","Gear"].map(t=>`<span class="chip clickable ${statsState.curveTypeFilter.has(t)?"on":""}" data-toggle-curve-type="${t}">${TYPE_LABEL[t]||t}</span>`).join("")}
+            ${CURVE_TYPE_ORDER.map(t=>`<span class="chip clickable ${statsState.curveTypeFilter.has(t)?"on":""}" data-toggle-curve-type="${t}"><span class="curve-type-dot" style="background:${CURVE_TYPE_COLORS[t]};"></span>${TYPE_LABEL[t]||t}</span>`).join("")}
           </div>
         </div>
         <div id="costCurveBox">${costCurveChartHtml(items)}</div>
-        <p class="hint">Distribution of Energy cost among Units/Spells/Gear in the main deck. The highlighted inner bar breaks out the checked type(s); dashed lines mark every ${curveGridStep(Math.max(1,...Object.values(curve)))} cards.</p>
+        <p class="hint">Distribution of Energy cost in the main deck. Each bar stacks the checked type(s) — Unit, Spell, Gear — as separate colored segments that always sum to the bar's total; uncheck a type to drop it from the curve entirely. Dashed lines mark every ${curveGridStep(Math.max(1,...Object.values(curve)))} cards.</p>
       </div>
       <div class="card-surface pad" style="flex:1;min-width:320px;">
         <h3>Mechanic density</h3>
@@ -3045,7 +3159,7 @@ function renderStatsView(){
           <button id="statAbsAdd" title="+1">+</button>
         </div>
         <span class="hint">Effective library: <strong class="tabular" id="statEffLib">${statsEffectiveLibSize(deck)}</strong> cards</span>
-        <button class="btn small" id="statDrawRandom" title="Draw one random card (from the current selection) into your Hand">🎲 Draw random</button>
+        <button class="btn small" id="statDrawRandom" title="Draw one random card from your library into your Hand">🎲 Draw random</button>
         <button class="btn ghost small" id="statResetSim">Reset simulation</button>
       </div>
       <div id="drawChanceChart"></div>
@@ -3062,10 +3176,10 @@ function renderStatsView(){
   renderDrawChanceChart();
   renderZoneBoard();
   renderImpactChart();
-  byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); resetStatsSimulation(); renderStatsView(); });
-  const nb=byId("btnNewDeck"); if(nb) nb.addEventListener("click", ()=>{ const d=blankDeck("New deck "+(STORE.decks.length+1)); STORE.decks.push(d); STORE.activeId=d.id; saveStore(); renderStatsView(); });
-  const rb=byId("btnRenameDeck"); if(rb) rb.addEventListener("click", ()=>{ const name=prompt("New name:",deck.name); if(name){deck.name=name;saveStore();renderStatsView();} });
-  const db=byId("btnDeleteDeck"); if(db) db.addEventListener("click", ()=>{ if(STORE.decks.length<=1){alert("At least one deck is required.");return;} if(!confirm("Delete?"))return; STORE.decks=STORE.decks.filter(d=>d.id!==deck.id); STORE.activeId=STORE.decks[0].id; saveStore(); renderStatsView(); });
+  byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>setActiveDeck(e.target.value));
+  const nb=byId("btnNewDeck"); if(nb) nb.addEventListener("click", ()=>uiNewDeck());
+  const rb=byId("btnRenameDeck"); if(rb) rb.addEventListener("click", ()=>uiRenameDeck(deck));
+  const db=byId("btnDeleteDeck"); if(db) db.addEventListener("click", ()=>uiDeleteDeck(deck));
 }
 
 function wireStatsControls(){
@@ -3108,9 +3222,12 @@ function wireStatsControls(){
   byId("statAbsSub").addEventListener("click", ()=>{ statsState.abstractTrash=Math.max(0,(statsState.abstractTrash||0)-1); absInput.value=statsState.abstractTrash; refreshDrawCalc(); });
   byId("statAbsAdd").addEventListener("click", ()=>{ statsState.abstractTrash=(statsState.abstractTrash||0)+1; absInput.value=statsState.abstractTrash; refreshDrawCalc(); });
   byId("statDrawRandom").addEventListener("click", ()=>{
+    // Pulls from the WHOLE deck, not just the filter-scoped selection — a
+    // real draw step doesn't care which mechanic chip happens to be
+    // checked, and this keeps it consistent with the zone board's
+    // Hand/Play/Trash columns (also deck-wide, see renderZoneBoard()).
     const items = deckMainCards(deck);
-    const sel = statsSelectionItems(items);
-    if(statsDrawRandom(deck, sel)) refreshDrawCalc();
+    if(statsDrawRandom(deck, items)) refreshDrawCalc();
   });
   byId("statResetSim").addEventListener("click", ()=>{ resetStatsSimulation(); renderStatsView(); });
 }
@@ -3161,24 +3278,34 @@ function zoneRowHtml(card, count, zoneKey){
     <div class="zone-row-actions">${actions}</div>
   </div>`;
 }
+/* Library stays scoped to the calculator's active category/type filter
+   (that's the whole point — "chance to draw into THIS"), but Hand/In
+   Play/Trash intentionally do NOT: they show every card with any zone
+   activity, deck-wide, regardless of what filter is currently checked.
+   Otherwise toggling a mechanic chip mid-goldfish makes already-drawn
+   cards seem to vanish/reset even though nothing about the simulation
+   actually changed — filters are just a lens on top of it, freely
+   reconfigurable without disturbing the board underneath. */
 function renderZoneBoard(){
   const board = byId("statZoneBoard");
   if(!board) return;
   const deck = activeDeck();
   const items = deckMainCards(deck);
+  const byCardId = new Map(items.map(x=>[x.card.id, x]));
   const sel = statsSelectionItems(items).sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
-  if(!sel.length){
-    board.innerHTML = `<p class="hint">${statsState.catMode==='mechanic'?'Check at least one mechanic above':'Select at least one card above'} to see it here.</p>`;
-    return;
-  }
+  const movedItems = Object.keys(statsState.zones).map(id=>byCardId.get(id)).filter(Boolean)
+    .sort((a,b)=>(a.card.energy??99)-(b.card.energy??99) || a.card.name.localeCompare(b.card.name));
+
   board.innerHTML = STATS_ZONE_DEFS.map(z=>{
-    const rows = sel.filter(x=>statsZoneCount(deck,x.card.id,z.key)>0);
+    const pool = z.key==="library" ? sel : movedItems;
+    const rows = pool.filter(x=>statsZoneCount(deck,x.card.id,z.key)>0);
     const total = rows.reduce((a,x)=>a+statsZoneCount(deck,x.card.id,z.key),0);
+    const emptyMsg = z.key==="library" ? (statsState.catMode==='mechanic'?'Check at least one mechanic above.':'Select at least one card above.') : "—";
     return `
     <div class="zone-col">
       <div class="zone-col-head"><span>${z.label}</span><span class="tabular">${total}</span></div>
       <div class="zone-col-body" data-zone-drop="${z.key}">
-        ${rows.map(x=>zoneRowHtml(x.card, statsZoneCount(deck,x.card.id,z.key), z.key)).join("") || '<p class="hint" style="padding:4px 6px;">—</p>'}
+        ${rows.map(x=>zoneRowHtml(x.card, statsZoneCount(deck,x.card.id,z.key), z.key)).join("") || `<p class="hint" style="padding:4px 6px;">${emptyMsg}</p>`}
       </div>
     </div>`;
   }).join("");
@@ -4358,10 +4485,10 @@ function renderTurnPlannerView(){
     </div>
   `;
 
-  byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>{ STORE.activeId=e.target.value; saveStore(); renderTurnPlannerView(); });
-  const nb=byId("btnNewDeck"); if(nb) nb.addEventListener("click", ()=>{ const d=blankDeck("New deck "+(STORE.decks.length+1)); STORE.decks.push(d); STORE.activeId=d.id; saveStore(); renderTurnPlannerView(); });
-  const rb=byId("btnRenameDeck"); if(rb) rb.addEventListener("click", ()=>{ const name=prompt("New name:",deck.name); if(name){deck.name=name;saveStore();renderTurnPlannerView();} });
-  const db=byId("btnDeleteDeck"); if(db) db.addEventListener("click", ()=>{ if(STORE.decks.length<=1){alert("At least one deck is required.");return;} if(!confirm("Delete?"))return; STORE.decks=STORE.decks.filter(d=>d.id!==deck.id); STORE.activeId=STORE.decks[0].id; saveStore(); renderTurnPlannerView(); });
+  byId("deckPicker") && byId("deckPicker").addEventListener("change", e=>setActiveDeck(e.target.value));
+  const nb=byId("btnNewDeck"); if(nb) nb.addEventListener("click", ()=>uiNewDeck());
+  const rb=byId("btnRenameDeck"); if(rb) rb.addEventListener("click", ()=>uiRenameDeck(deck));
+  const db=byId("btnDeleteDeck"); if(db) db.addEventListener("click", ()=>uiDeleteDeck(deck));
 
   byId("plannerIntent").addEventListener("change", e=>{ plannerState.intent=e.target.value; renderTurnPlannerView(); });
   byId("plannerNextTurn").addEventListener("click", ()=>{ plannerState.turn++; renderTurnPlannerView(); });
@@ -4606,12 +4733,61 @@ function wireBackButton(){
   });
 }
 
+/* Top-right pill: was a read-only Legend-name label that silently went
+   stale whenever the active deck changed anywhere else in the app (a
+   per-view deck picker, New/Rename/Delete, import). It's now a live
+   dropdown of the DECK name (with the Legend's domain chips alongside for
+   context) that doubles as a global deck switcher — kept in sync by
+   routing every deck-list mutation through setActiveDeck()/uiNewDeck()/
+   uiRenameDeck()/uiDeleteDeck() below instead of each view poking
+   STORE.activeId directly. Function name kept as-is (many call sites)
+   even though it's no longer just a "legend pill". */
 function renderTopbarLegendPill(){
   const deck = activeDeck();
   const legend = deckLegend(deck);
   const pill = byId("topbarLegendPill");
-  if(!legend){ pill.innerHTML = `<span class="hint">No Legend selected</span>`; return; }
-  pill.innerHTML = `${(legend.domain||[]).map(d=>domainChip(d)).join(" ")} <strong style="margin-left:6px;">${escapeHtml(legend.name)}</strong>`;
+  if(!pill) return;
+  pill.innerHTML = `
+    ${legend ? (legend.domain||[]).map(d=>domainChip(d)).join(" ") : '<span class="hint">No Legend</span>'}
+    <select id="topbarDeckSelect" title="Switch deck">${STORE.decks.map(d=>`<option value="${d.id}" ${d.id===STORE.activeId?"selected":""}>${escapeHtml(d.name)}</option>`).join("")}</select>
+  `;
+  byId("topbarDeckSelect").addEventListener("change", e=>setActiveDeck(e.target.value));
+}
+
+/* ---- shared deck-switch / deck-list-mutation helpers ----
+   Centralizing these means every entry point (the topbar picker, and each
+   view's own deckSelectorHtml() picker + New/Rename/Delete buttons) stays
+   in sync with all the others — no more "the dropdown doesn't update
+   unless you're on this particular view" bugs. */
+function setActiveDeck(id){
+  if(!STORE.decks.find(d=>d.id===id)) return;
+  STORE.activeId = id;
+  saveStore();
+  if(typeof builderState!=="undefined"){ builderState.deckSelected=new Set(); builderState.sideSelected=new Set(); }
+  if(typeof resetStatsSimulation==="function") resetStatsSimulation();
+  renderTopbarLegendPill();
+  const v = VIEWS.find(v=>v.key===currentView);
+  if(v) v.render();
+}
+function uiNewDeck(){
+  const d = blankDeck("New deck "+(STORE.decks.length+1));
+  STORE.decks.push(d);
+  setActiveDeck(d.id);
+}
+function uiRenameDeck(deck){
+  const name = prompt("New name for the deck:", deck.name);
+  if(!name) return;
+  deck.name = name;
+  saveStore();
+  renderTopbarLegendPill();
+  const v = VIEWS.find(v=>v.key===currentView);
+  if(v) v.render();
+}
+function uiDeleteDeck(deck){
+  if(STORE.decks.length<=1){ alert("You must have at least one deck."); return; }
+  if(!confirm("Delete this deck permanently?")) return;
+  STORE.decks = STORE.decks.filter(d=>d.id!==deck.id);
+  setActiveDeck(STORE.decks[0].id);
 }
 
 function wireGlobalEvents(){
