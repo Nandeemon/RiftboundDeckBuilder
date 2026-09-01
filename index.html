@@ -299,6 +299,10 @@ table tr:hover td{ background:var(--surface-2); }
   position:absolute; bottom:6px; left:6px; z-index:2; background:var(--focus); color:#fff; border-radius:6px;
   padding:1px 6px; font-family:var(--font-mono); font-weight:700; font-size:.72rem; box-shadow:var(--shadow-1);
 }
+.mini-card .pickrate{
+  position:absolute; top:6px; right:6px; z-index:2; background:rgba(0,0,0,.55); color:#fff; border-radius:6px;
+  padding:1px 6px; font-family:var(--font-mono); font-weight:700; font-size:.68rem; box-shadow:var(--shadow-1);
+}
 .deck-stepper-check{ display:flex; align-items:center; margin-right:2px; }
 .deck-stepper-check input{ width:16px; height:16px; cursor:pointer; }
 .mini-card.small{ width:112px; }
@@ -1878,9 +1882,11 @@ function miniCardHtml(card, opts){
         onerror="const l=this.closest('.art-layer'); if(l) l.remove();">
     </div>` : "";
   const matchHtml = opts.matchScore!=null ? `<div class="matchscore" title="Focus match score (0-100)">${Math.round(opts.matchScore)}</div>` : "";
+  const pickrateHtml = opts.pickRate ? `<div class="pickrate" title="Played in ${opts.pickRate.count} of ${opts.pickRate.total} sampled tournament decklists with a known main deck">${opts.pickRate.pct}%</div>` : "";
   return `
   <div class="mini-card${sizeClass}" data-card-id="${card.id}" style="--c1:${c1};--c2:${c2}" tabindex="0" role="button" aria-label="${escapeHtml(card.name)}">
     ${matchHtml}
+    ${pickrateHtml}
     ${art}
     <div class="head">
       ${card.energy!=null ? `<div class="cost">${card.energy}</div>` : ""}
@@ -2093,36 +2099,140 @@ function closeModal(){ document.querySelectorAll(".modal-back").forEach(b=>b.rem
    click-through). Click wiring for [data-card-id] is manual here (matching
    every other place miniCardHtml is used, e.g. renderDbResults) because only
    the hover preview is globally delegated, not the click — see
-   wireGlobalEvents() in part11_boot.js. */
+   wireGlobalEvents() in part11_boot.js.
+
+   Supports an optional toolbar: a sort dropdown (Pickrate/Cost/Name/Power,
+   Pickrate only offered when opts.pickrateMap is given) plus cost- and
+   type-filter chips built from whatever's actually in `cards` (never an
+   empty/dead chip for a value that isn't present). State lives in
+   cardListModalState, a single-instance module-level object — only one of
+   these modals is ever open at once (openCardListModal always closes any
+   prior modal first), so there's nothing to key it by. */
+const cardListModalState = { cards:[], title:"", subtitle:"", opts:{}, sort:"pickrate", costFilter:new Set(), typeFilter:new Set() };
+function cardListModalVisibleCards(){
+  let list = cardListModalState.cards;
+  if(cardListModalState.typeFilter.size) list = list.filter(c=>cardListModalState.typeFilter.has(c.type));
+  if(cardListModalState.costFilter.size) list = list.filter(c=>cardListModalState.costFilter.has(c.energy));
+  const pr = cardListModalState.opts.pickrateMap;
+  const sort = cardListModalState.sort;
+  return [...list].sort((a,b)=>{
+    if(sort==="pickrate" && pr){
+      const pa=(pr.get(a.id)||{count:0}).count, pb=(pr.get(b.id)||{count:0}).count;
+      if(pb!==pa) return pb-pa;
+    } else if(sort==="cost"){
+      const ca=a.energy??99, cb=b.energy??99;
+      if(ca!==cb) return ca-cb;
+    } else if(sort==="power"){
+      const pa = DECKBUILDABLE_TYPES.includes(a.type)?cardPowerScore(a):-1, pb = DECKBUILDABLE_TYPES.includes(b.type)?cardPowerScore(b):-1;
+      if(pb!==pa) return pb-pa;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+function cardListModalGridHtml(){
+  const visible = cardListModalVisibleCards();
+  const pr = cardListModalState.opts.pickrateMap;
+  if(!cardListModalState.cards.length) return `<p class="hint">No cards found.</p>`;
+  if(!visible.length) return `<p class="hint">No cards match the current filters.</p>`;
+  return `<div class="card-grid">${visible.map(c=>{
+    const rate = pr && pr.get(c.id);
+    return miniCardHtml(c, rate?{pickRate:rate}:undefined);
+  }).join("")}</div>`;
+}
+function cardListModalToolbarHtml(){
+  const cards = cardListModalState.cards;
+  if(!cards.length) return "";
+  const costs = [...new Set(cards.map(c=>c.energy).filter(e=>e!=null))].sort((a,b)=>a-b);
+  const types = [...new Set(cards.map(c=>c.type))].sort();
+  const hasPickrate = !!cardListModalState.opts.pickrateMap;
+  return `
+    <div class="row wrap" style="gap:10px;align-items:center;margin:8px 0;">
+      <label class="hint">Sort
+        <select id="cardListSort" style="margin-left:4px;">
+          ${hasPickrate?`<option value="pickrate" ${cardListModalState.sort==="pickrate"?"selected":""}>Pickrate</option>`:""}
+          <option value="cost" ${cardListModalState.sort==="cost"?"selected":""}>Energy cost</option>
+          <option value="power" ${cardListModalState.sort==="power"?"selected":""}>Power score</option>
+          <option value="name" ${cardListModalState.sort==="name"?"selected":""}>Name</option>
+        </select>
+      </label>
+      ${types.length>1?`<div class="row wrap" style="gap:4px;align-items:center;">
+        <span class="hint">Type:</span>
+        ${types.map(t=>`<span class="chip clickable ${cardListModalState.typeFilter.has(t)?"on":""}" data-cardlist-type="${t}">${TYPE_LABEL[t]||t}</span>`).join("")}
+      </div>`:""}
+      ${costs.length>1?`<div class="row wrap" style="gap:4px;align-items:center;">
+        <span class="hint">Cost:</span>
+        ${costs.map(e=>`<span class="chip clickable ${cardListModalState.costFilter.has(e)?"on":""}" data-cardlist-cost="${e}">${e}</span>`).join("")}
+      </div>`:""}
+      ${(cardListModalState.typeFilter.size||cardListModalState.costFilter.size)?`<button class="btn ghost small" id="cardListClearFilters">Clear filters</button>`:""}
+    </div>`;
+}
 function cardListModalHtml(cards, title, subtitle, opts){
   opts = opts||{};
   return `
     <div class="pad">
       ${opts.backLabel?`<button class="btn ghost small" data-modal-back style="margin-bottom:8px;">${escapeHtml(opts.backLabel)}</button>`:""}
       <div class="spread"><h2>${escapeHtml(title)}</h2><button class="btn ghost small" data-action="close-modal">Close</button></div>
-      ${subtitle?`<p class="hint" style="margin-bottom:10px;">${subtitle}</p>`:""}
-      ${cards.length ? `<div class="card-grid">${cards.map(c=>miniCardHtml(c)).join("")}</div>` : `<p class="hint">No cards found.</p>`}
+      ${subtitle?`<p class="hint" style="margin-bottom:2px;">${subtitle}</p>`:""}
+      ${opts.pickrateMap?`<p class="hint" style="margin-bottom:2px;">Pickrate = share of sampled tournament decklists (with a known main deck) that played the card at least once.</p>`:""}
+      <div id="cardListToolbar">${cardListModalToolbarHtml()}</div>
+      <div id="cardListGrid">${cardListModalGridHtml()}</div>
     </div>`;
+}
+function wireCardListModalControls(back){
+  const sortSel = back.querySelector("#cardListSort");
+  if(sortSel) sortSel.addEventListener("change", e=>{ cardListModalState.sort = e.target.value; rerenderCardListModal(back); });
+  back.querySelectorAll("[data-cardlist-type]").forEach(chip=>chip.addEventListener("click", ()=>{
+    const t = chip.getAttribute("data-cardlist-type");
+    if(cardListModalState.typeFilter.has(t)) cardListModalState.typeFilter.delete(t); else cardListModalState.typeFilter.add(t);
+    rerenderCardListModal(back);
+  }));
+  back.querySelectorAll("[data-cardlist-cost]").forEach(chip=>chip.addEventListener("click", ()=>{
+    const e = Number(chip.getAttribute("data-cardlist-cost"));
+    if(cardListModalState.costFilter.has(e)) cardListModalState.costFilter.delete(e); else cardListModalState.costFilter.add(e);
+    rerenderCardListModal(back);
+  }));
+  const clearBtn = back.querySelector("#cardListClearFilters");
+  if(clearBtn) clearBtn.addEventListener("click", ()=>{
+    cardListModalState.typeFilter.clear(); cardListModalState.costFilter.clear();
+    rerenderCardListModal(back);
+  });
+  back.querySelectorAll("#cardListGrid [data-card-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-card-id"))));
+}
+function rerenderCardListModal(back){
+  back.querySelector("#cardListToolbar").innerHTML = cardListModalToolbarHtml();
+  back.querySelector("#cardListGrid").innerHTML = cardListModalGridHtml();
+  wireCardListModalControls(back);
 }
 function openCardListModal(cards, title, subtitle, opts){
   opts = opts||{};
   closeModal(); // never stack on top of an already-open modal
+  cardListModalState.cards = cards;
+  cardListModalState.title = title;
+  cardListModalState.subtitle = subtitle;
+  cardListModalState.opts = opts;
+  cardListModalState.sort = opts.pickrateMap ? "pickrate" : "cost";
+  cardListModalState.costFilter = new Set();
+  cardListModalState.typeFilter = new Set();
   const back = el("div","modal-back"); back.id="modalBack";
   back.innerHTML = `<div class="modal">${cardListModalHtml(cards, title, subtitle, opts)}</div>`;
   back.addEventListener("click", e=>{ if(e.target===back) closeModal(); });
   document.body.appendChild(back);
-  back.querySelectorAll("[data-card-id]").forEach(elx=>elx.addEventListener("click", ()=>openCardModal(elx.getAttribute("data-card-id"))));
+  wireCardListModalControls(back);
   const backBtn = back.querySelector("[data-modal-back]");
   if(backBtn && opts.onBack) backBtn.addEventListener("click", ()=>{ closeModal(); opts.onBack(); });
 }
 
 /* keyword-term hover tooltip (event-delegated, set up once in boot) */
 let _kwTooltipEl = null;
+let _kwTooltipTarget = null;
 function showKwTooltip(target){
   const word = target.getAttribute("data-kwterm");
   const num = target.getAttribute("data-kwnum");
   const gloss = KEYWORD_GLOSSARY[word];
   if(!gloss) return;
+  if(_kwTooltipEl && _kwTooltipTarget===target){ positionTooltip(target); return; } // already showing for this exact element — just track the cursor, don't recreate
+  hideKwTooltip(); // mouseover re-fires on every re-entry (e.g. jittering near the element's edge); always clear any previous tooltip node first so repeated fires can't stack orphaned copies
+  _kwTooltipTarget = target;
   _kwTooltipEl = el("div","tooltip", `<strong>${escapeHtml(word)}${num?" "+num:""}</strong><br>${escapeHtml(gloss)}`);
   document.body.appendChild(_kwTooltipEl);
   positionTooltip(target);
@@ -2133,7 +2243,7 @@ function positionTooltip(target){
   _kwTooltipEl.style.left = clamp(r.left, 8, window.innerWidth-268) + "px";
   _kwTooltipEl.style.top = (r.bottom+8) + "px";
 }
-function hideKwTooltip(){ if(_kwTooltipEl){ _kwTooltipEl.remove(); _kwTooltipEl=null; } }
+function hideKwTooltip(){ if(_kwTooltipEl){ _kwTooltipEl.remove(); _kwTooltipEl=null; } _kwTooltipTarget=null; }
 
 
 /* ===================== VIEW: DATABASE ===================== */
@@ -4162,6 +4272,39 @@ function metaDeckDate(dk){
   const m = /^\d{4}-\d{2}-\d{2}/.exec((dk._event&&dk._event.date)||"");
   return m ? m[0] : null;
 }
+/* "Pickrate" for a card = the share of sampled tournament decklists (across
+   every event, ignoring the Domain Breakdown's own event/date filter —
+   pickrate is meant to read as "how often does the wider meta play this
+   card", not be sliced by whatever filter happens to be set when you
+   opened a keyword's card list) that played it at least once. Counts
+   PRESENCE per decklist, not copies (a 3-of and a 1-of both count as 1) —
+   that's what "pickrate"/"play rate" means in TCG parlance, as opposed to
+   "average copies run". Only decklists with at least one card entry count
+   toward the denominator; most Top-8-only placements in this data have an
+   empty decklist (never had a full list published/extracted) and would
+   otherwise silently deflate every card's rate. Cached — META_DATA is
+   static for the life of the page. */
+let _globalPickrateCache = null;
+function globalCardPickrateStats(){
+  if(_globalPickrateCache) return _globalPickrateCache;
+  const counts = new Map();
+  let total = 0;
+  for(const dk of allMetaDecks()){
+    if(!dk.decklist || !dk.decklist.length) continue;
+    total++;
+    const seen = new Set();
+    for(const entry of dk.decklist){
+      const card = findCardByName(entry.card_name);
+      if(!card || seen.has(card.id)) continue;
+      seen.add(card.id);
+      counts.set(card.id, (counts.get(card.id)||0) + 1);
+    }
+  }
+  const map = new Map();
+  for(const [id,count] of counts.entries()) map.set(id, { count, total, pct: total ? Math.round(count/total*100) : 0 });
+  _globalPickrateCache = map;
+  return _globalPickrateCache;
+}
 /* Some meta-data entries (mostly the summary "most represented legend"
    rows, as opposed to full decklist submissions) give only a champion's
    bare first name — "Master Yi" — with no title, while every Legend card
@@ -4514,7 +4657,7 @@ function openDomainModal(domain, stats){
   wireKeywordDistributionRows(
     back, cardDomainKeywordStats().individual[domain],
     `${escapeHtml(DOMAIN_LABEL[domain]||domain)} domain, across the full card database.`,
-    { backLabel:`← Back to ${DOMAIN_LABEL[domain]||domain}`, onBack:()=>openDomainModal(domain, stats) }
+    { backLabel:`← Back to ${DOMAIN_LABEL[domain]||domain}`, onBack:()=>openDomainModal(domain, stats), pickrateMap: globalCardPickrateStats() }
   );
 }
 
@@ -4557,7 +4700,7 @@ function openDomainPairModal(domainA, domainB, stats, backDomain){
   wireKeywordDistributionRows(
     back, cardDomainKeywordStats().pairs[key],
     `${escapeHtml(DOMAIN_LABEL[domainA]||domainA)}/${escapeHtml(DOMAIN_LABEL[domainB]||domainB)} hybrid domain, across the full card database.`,
-    { backLabel:`← Back to ${DOMAIN_LABEL[domainA]||domainA} × ${DOMAIN_LABEL[domainB]||domainB}`, onBack:()=>openDomainPairModal(domainA, domainB, stats, backDomain) }
+    { backLabel:`← Back to ${DOMAIN_LABEL[domainA]||domainA} × ${DOMAIN_LABEL[domainB]||domainB}`, onBack:()=>openDomainPairModal(domainA, domainB, stats, backDomain), pickrateMap: globalCardPickrateStats() }
   );
 }
 
